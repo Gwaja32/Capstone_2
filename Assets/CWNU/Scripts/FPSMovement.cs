@@ -101,6 +101,10 @@ public class FPSMovement : MonoBehaviour
 
         moveInput = moveAction.ReadValue<Vector2>();
         Vector3 move = (transform.forward * moveInput.y + transform.right * moveInput.x);
+        if (move.magnitude > 1f)
+        {
+            move.Normalize();
+        }
         controller.Move(move * moveSpeed * Time.deltaTime);
 
         if (jumpAction.triggered && isGrounded)
