@@ -1469,7 +1469,7 @@ MonoBehaviour:
   cameraHolder: {fileID: 1050085779}
   targetObject: {fileID: 12915682}
   shoulderOffset: 6
-  mouseStepThreshold: 2000
+  mouseStepThreshold: 1000
   mouseDecaySpeed: 3
   camTransitionSpeed: 15
   moveSpeed: 0.3
