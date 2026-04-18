@@ -1,6 +1,7 @@
+using GLTFast.Schema;
+using Unity.Cinemachine;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using Unity.Cinemachine;
 
 public class TPSFixedMovement : MonoBehaviour
 {
@@ -112,6 +113,8 @@ public class TPSFixedMovement : MonoBehaviour
                 //Invoke("ResetActionLayer", 1.5f);
             }
         }
+
+        anim.SetFloat("Stance", (float)currentStance);
     }
 
     private void ExecuteAttack()
