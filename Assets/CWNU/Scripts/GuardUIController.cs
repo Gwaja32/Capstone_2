@@ -25,7 +25,7 @@ public class GuardUIController : MonoBehaviour
     public Color activeColor = new Color(1f, 1f, 1f, 1f);
     public Color inactiveColor = new Color(1f, 1f, 1f, 0f);
 
-    private TPSFixedMovement.CombatStance lastStance;
+    private CombatStance lastStance;
 
     void Start()
     {
@@ -65,7 +65,7 @@ public class GuardUIController : MonoBehaviour
         }
     }
 
-    void UpdateUI(TPSFixedMovement.CombatStance stance)
+    void UpdateUI(CombatStance stance)
     {
         topSwordUI.color = inactiveColor;
         leftSwordUI.color = inactiveColor;
@@ -73,13 +73,13 @@ public class GuardUIController : MonoBehaviour
 
         switch (stance)
         {
-            case TPSFixedMovement.CombatStance.Top:
+            case CombatStance.Top:
                 topSwordUI.color = activeColor;
                 break;
-            case TPSFixedMovement.CombatStance.Left:
+            case CombatStance.Left:
                 leftSwordUI.color = activeColor;
                 break;
-            case TPSFixedMovement.CombatStance.Right:
+            case CombatStance.Right:
                 rightSwordUI.color = activeColor;
                 break;
         }

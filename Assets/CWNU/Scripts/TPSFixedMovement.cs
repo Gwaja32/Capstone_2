@@ -1,4 +1,6 @@
 using GLTFast.Schema;
+using System.Collections;
+using System.Collections.Generic;
 using Unity.Cinemachine;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -17,7 +19,6 @@ public class TPSFixedMovement : MonoBehaviour
     public float camTransitionSpeed = 15f;
 
     // 기존 private int aimState = 0; 를 아래로 교체
-    public enum CombatStance { Top, Left, Right }
     [Header("Combat Stance")]
     public CombatStance currentStance = CombatStance.Top;
 
@@ -30,6 +31,14 @@ public class TPSFixedMovement : MonoBehaviour
     [Header("Movement Settings")]
     public float moveSpeed = 5f;
     public float gravity = -9.81f;
+
+    [Header("Combat & Hit System")]
+    public float attackRange = 2.5f;        // 공격 사거리
+    public LayerMask enemyLayer;           // 적 레이어 설정
+    public AnimationClip topHitClip;       // 플레이어용 상단 피격 클립
+    public AnimationClip sideHitClip;      // 플레이어용 측면 피격 클립
+    private Dictionary<string, float> hitDurationDict = new Dictionary<string, float>();
+    public bool isHitState = false;        // 피격 중인지 여부
 
     [Header("Foot IK Settings (팔 IK는 제거됨)")]
     public bool useFootIK = true;
@@ -67,10 +76,16 @@ public class TPSFixedMovement : MonoBehaviour
     {
         Cursor.lockState = CursorLockMode.Locked;
         actionLayerIndex = anim.GetLayerIndex(actionLayerName);
+
+        // 피격 애니메이션 길이 저장
+        if (topHitClip != null) hitDurationDict["TopHit"] = topHitClip.length;
+        if (sideHitClip != null) hitDurationDict["SideHit"] = sideHitClip.length;
     }
 
     void Update()
     {
+        if (isHitState) return; // 피격 중에는 이동/공격 불가
+
         bool isGrounded = controller.isGrounded;
         anim.SetBool("IsGrounded", isGrounded);
         if (isGrounded && velocity.y < 0) velocity.y = -2f;
@@ -121,18 +136,51 @@ public class TPSFixedMovement : MonoBehaviour
     {
         if (anim == null) return;
 
+        // 공격 트리거 실행
         switch (currentStance)
         {
-            case CombatStance.Top:
-                anim.SetTrigger("IsTopAttack");
-                break;
-            case CombatStance.Left:
-                anim.SetTrigger("IsLeftAttack");
-                break;
-            case CombatStance.Right:
-                anim.SetTrigger("IsRightAttack");
-                break;
+            case CombatStance.Top: anim.SetTrigger("IsTopAttack"); break;
+            case CombatStance.Left: anim.SetTrigger("IsLeftAttack"); break;
+            case CombatStance.Right: anim.SetTrigger("IsRightAttack"); break;
         }
+
+        // --- 적 피격 판정 추가 (Raycast) ---
+        RaycastHit hit;
+        Vector3 rayStart = transform.position + Vector3.up * 0.5f; // 가슴 높이에서 레이 발사
+        if (Physics.Raycast(rayStart, transform.forward, out hit, attackRange, enemyLayer))
+        {
+            EnemyAI enemy = hit.collider.GetComponent<EnemyAI>();
+            if (enemy != null)
+            {
+                // 성공적으로 맞추었을 때 적의 피격 함수 호출
+                enemy.TakeDamage(this.currentStance);
+            }
+        }
+    }
+
+    // --- 플레이어 피격 함수 (적 스크립트에서 호출용) ---
+    public void TakeDamage(CombatStance attackerStance)
+    {
+        if (isHitState) return;
+        StopAllCoroutines();
+
+        string triggerName = (attackerStance == CombatStance.Top) ? "IsTopHit" : "IsSideHit";
+        float duration = hitDurationDict.ContainsKey(attackerStance == CombatStance.Top ? "TopHit" : "SideHit")
+                         ? hitDurationDict[attackerStance == CombatStance.Top ? "TopHit" : "SideHit"] : 0.5f;
+
+        StartCoroutine(PlayerHitRoutine(triggerName, duration));
+    }
+
+    private IEnumerator PlayerHitRoutine(string triggerName, float duration)
+    {
+        isHitState = true;
+        isInteracting = false;
+        anim.SetTrigger(triggerName);
+
+        yield return new WaitForSeconds(duration);
+
+        isHitState = false;
+        isInteracting = true;
     }
 
     void LateUpdate()
