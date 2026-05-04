@@ -3031,7 +3031,7 @@ MonoBehaviour:
     m_Bits: 64
   chaseRange: 10
   attackRange: 0.8
-  moveSpeed: 1
+  moveSpeed: 0
   rotationSpeed: 10
   gravity: -10
   attackCooldown: 4

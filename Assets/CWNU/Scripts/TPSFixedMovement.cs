@@ -117,6 +117,13 @@ public class TPSFixedMovement : MonoBehaviour
 
         UpdateActionLayerWeight();
 
+        // 패링 입력 처리 (Left Control 키)
+        if (Keyboard.current != null && Keyboard.current.leftCtrlKey.wasPressedThisFrame)
+        {
+            // 상호작용 가능하거나 이미 공격 중이더라도 패링은 즉시 나갈 수 있게 설정
+            ExecuteParry();
+        }
+
         // 공격 입력 처리
         if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
         {
@@ -130,6 +137,43 @@ public class TPSFixedMovement : MonoBehaviour
         }
 
         anim.SetFloat("Stance", (float)currentStance);
+    }
+
+    private IEnumerator ParryRoutine(float duration)
+    {
+        isInteracting = false; // 패링 시작 시 이동 차단
+
+        yield return new WaitForSeconds(duration);
+
+        isInteracting = true;  // 패링 종료 후 이동 허용
+    }
+
+    private void ExecuteParry()
+    {
+        if (anim == null) return;
+
+        // 1. 애니메이터 트리거 실행 (ExecuteAttack의 스위치 문과 동일한 구조)
+        // 자세에 상관없이 공통 패링을 한다면 그냥 IsParry 하나만 쓰셔도 됩니다.
+        anim.SetTrigger("IsParry");
+
+        // 2. 물리적 패링 판정 (ExecuteAttack의 Raycast 로직 활용)
+        // 공격 사거리보다 조금 더 넓게 잡거나 동일하게 설정합니다.
+        RaycastHit hit;
+        Vector3 rayStart = transform.position + Vector3.up * 0.5f;
+        if (Physics.Raycast(rayStart, transform.forward, out hit, attackRange, enemyLayer))
+        {
+            EnemyAI enemy = hit.collider.GetComponent<EnemyAI>();
+            if (enemy != null)
+            {
+                // 적에게 "나 지금 패링 시도했어!"라고 알리는 함수 (적 스크립트에 구현 필요)
+                // enemy.OnParried(); 
+                Debug.Log("패링 범위 안에 적이 있음!");
+            }
+        }
+
+        // 3. 상태 제어 (공격과 동일하게 코루틴으로 복구)
+        StopCoroutine("ParryRoutine");
+        StartCoroutine(ParryRoutine(1.5f)); // 0.8초는 애니메이션 길이에 맞춰 조절
     }
 
     private void ExecuteAttack()
