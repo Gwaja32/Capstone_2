@@ -1,9 +1,8 @@
-using GLTFast.Schema;
 using System.Collections;
 using System.Collections.Generic;
-using Unity.Cinemachine;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using Unity.Cinemachine;
 
 public class TPSFixedMovement : MonoBehaviour
 {
@@ -13,53 +12,63 @@ public class TPSFixedMovement : MonoBehaviour
     public Transform targetObject;
 
     [Header("Aim Step Settings")]
-    public float shoulderOffset = 6f;
+    public float shoulderOffset = 1.5f; // 캐릭터 키(0.8)에 맞춰 조정
     public float mouseStepThreshold = 1000f;
     public float mouseDecaySpeed = 3f;
     public float camTransitionSpeed = 15f;
 
-    // 기존 private int aimState = 0; 를 아래로 교체
     [Header("Combat Stance")]
     public CombatStance currentStance = CombatStance.Top;
 
-    // 마우스 Y축 누적을 위한 변수 추가
-    private float mouseAccumulatorX = 0f;
-    private float mouseAccumulatorY = 0f;
-
-    private float currentXOffset = 0f;
+    [Header("Stats Settings")]
+    public float maxHealth = 100f;
+    public float currentHealth;
+    public float maxStamina = 100f;
+    public float currentStamina;
+    public float staminaRegenRate = 20f;
+    public float guardStaminaCost = 25f;
+    public float minStaminaToGuard = 10f;
 
     [Header("Movement Settings")]
     public float moveSpeed = 5f;
+    public float guardSpeedMultiplier = 0.4f;
     public float gravity = -9.81f;
 
     [Header("Combat & Hit System")]
-    public float attackRange = 2.5f;        // 공격 사거리
-    public LayerMask enemyLayer;           // 적 레이어 설정
-    public AnimationClip topHitClip;       // 플레이어용 상단 피격 클립
-    public AnimationClip sideHitClip;      // 플레이어용 측면 피격 클립
-    private Dictionary<string, float> hitDurationDict = new Dictionary<string, float>();
-    public bool isHitState = false;        // 피격 중인지 여부
+    public float attackRange = 1.2f; // 캐릭터(0.8) + 칼(0.8) 최적화
+    public LayerMask enemyLayer;
+    public AnimationClip topHitClip;
+    public AnimationClip sideHitClip;
+    public float attackDuration = 1.0f;
+    public float parryDuration = 0.8f;
+    public float parryDamage = 20f;
+    public bool isHitState = false;
+    public bool isGuarding = false;
 
-    [Header("Foot IK Settings (팔 IK는 제거됨)")]
+    [Header("Foot IK Settings")]
     public bool useFootIK = true;
     public LayerMask groundLayer;
-    public float footOffset = 0.12f;
+    public float footOffset = 0.05f; // 캐릭터 크기에 맞춰 조정
     public float ikWeight = 1f;
     private float currentIKWeight = 0f;
-
-    [Header("Layer Settings")]
-    public string actionLayerName = "Action Layer";
-    private int actionLayerIndex;
 
     [Header("References")]
     public CharacterController controller;
     public Animator anim;
-    public bool isInteracting = false;
+    public bool isInteracting = true;
 
+    // Internal Variables
+    private float mouseAccumulatorX = 0f;
+    private float mouseAccumulatorY = 0f;
+    private float currentXOffset = 0f;
     private Vector3 velocity;
-    private Vector2 moveInput;
-    private InputAction moveAction, lookAction;
+    private int actionLayerIndex;
+    private Dictionary<string, float> hitDurationDict = new Dictionary<string, float>();
+
     private InputActionMap actionMap;
+    private InputAction moveAction, lookAction, guardAction, parryAction;
+
+    private bool isDead = false;
 
     void Awake()
     {
@@ -69,199 +78,311 @@ public class TPSFixedMovement : MonoBehaviour
             .With("Up", "<Keyboard>/w").With("Down", "<Keyboard>/s")
             .With("Left", "<Keyboard>/a").With("Right", "<Keyboard>/d");
         lookAction = actionMap.AddAction("Look", binding: "<Mouse>/delta");
+        guardAction = actionMap.AddAction("Guard", binding: "<Mouse>/rightButton");
+        parryAction = actionMap.AddAction("Parry", binding: "<Keyboard>/leftCtrl");
         actionMap.Enable();
     }
 
     void Start()
     {
         Cursor.lockState = CursorLockMode.Locked;
-        actionLayerIndex = anim.GetLayerIndex(actionLayerName);
+        currentHealth = maxHealth;
+        currentStamina = maxStamina;
+        actionLayerIndex = anim.GetLayerIndex("Action Layer");
 
-        // 피격 애니메이션 길이 저장
         if (topHitClip != null) hitDurationDict["TopHit"] = topHitClip.length;
         if (sideHitClip != null) hitDurationDict["SideHit"] = sideHitClip.length;
     }
 
     void Update()
     {
-        if (isHitState) return; // 피격 중에는 이동/공격 불가
+        HandleStaminaRegen();
 
-        bool isGrounded = controller.isGrounded;
-        anim.SetBool("IsGrounded", isGrounded);
-        if (isGrounded && velocity.y < 0) velocity.y = -2f;
-
-        HandleAimStep();
-
-        if (isInteracting)
+        // 1. 행동 가능 상태일 때만 입력 처리
+        if (isInteracting && !isHitState)
         {
-            moveInput = moveAction.ReadValue<Vector2>();
-            Vector3 move = (transform.forward * moveInput.y + transform.right * moveInput.x);
-            if (move.magnitude > 1f) move.Normalize();
+            HandleGuardInput();
+            HandleAimStep();
 
-            controller.Move(move * moveSpeed * Time.deltaTime);
-
-            anim.SetFloat("InputX", moveInput.x, 0.1f, Time.deltaTime);
-            anim.SetFloat("InputY", moveInput.y, 0.1f, Time.deltaTime);
-        }
-        else
-        {
-            anim.SetFloat("InputX", 0, 0.1f, Time.deltaTime);
-            anim.SetFloat("InputY", 0, 0.1f, Time.deltaTime);
-        }
-
-        velocity.y += gravity * Time.deltaTime;
-        controller.Move(velocity * Time.deltaTime);
-
-        // [수정됨] 억지로 0으로 끄는 로직 삭제. 평소처럼 자연스럽게 IK 가중치 유지
-        currentIKWeight = Mathf.MoveTowards(currentIKWeight, isGrounded ? ikWeight : 0f, Time.deltaTime * 5f);
-
-        UpdateActionLayerWeight();
-
-        // 패링 입력 처리 (Left Control 키)
-        if (Keyboard.current != null && Keyboard.current.leftCtrlKey.wasPressedThisFrame)
-        {
-            // 상호작용 가능하거나 이미 공격 중이더라도 패링은 즉시 나갈 수 있게 설정
-            ExecuteParry();
-        }
-
-        // 공격 입력 처리
-        if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-        {
-            if (isInteracting)
+            if (Mouse.current.leftButton.wasPressedThisFrame)
             {
-                isInteracting = false;
                 ExecuteAttack();
-                //CancelInvoke("ResetActionLayer");
-                //Invoke("ResetActionLayer", 1.5f);
             }
-        }
 
-        anim.SetFloat("Stance", (float)currentStance);
-    }
-
-    private IEnumerator ParryRoutine(float duration)
-    {
-        isInteracting = false; // 패링 시작 시 이동 차단
-
-        yield return new WaitForSeconds(duration);
-
-        isInteracting = true;  // 패링 종료 후 이동 허용
-    }
-
-    private void ExecuteParry()
-    {
-        if (anim == null) return;
-
-        // 1. 애니메이터 트리거 실행 (ExecuteAttack의 스위치 문과 동일한 구조)
-        // 자세에 상관없이 공통 패링을 한다면 그냥 IsParry 하나만 쓰셔도 됩니다.
-        anim.SetTrigger("IsParry");
-
-        // 2. 물리적 패링 판정 (ExecuteAttack의 Raycast 로직 활용)
-        // 공격 사거리보다 조금 더 넓게 잡거나 동일하게 설정합니다.
-        RaycastHit hit;
-        Vector3 rayStart = transform.position + Vector3.up * 0.5f;
-        if (Physics.Raycast(rayStart, transform.forward, out hit, attackRange, enemyLayer))
-        {
-            EnemyAI enemy = hit.collider.GetComponent<EnemyAI>();
-            if (enemy != null)
+            if (parryAction.triggered)
             {
-                // 적에게 "나 지금 패링 시도했어!"라고 알리는 함수 (적 스크립트에 구현 필요)
-                // enemy.OnParried(); 
-                Debug.Log("패링 범위 안에 적이 있음!");
+                ExecuteParry();
             }
         }
 
-        // 3. 상태 제어 (공격과 동일하게 코루틴으로 복구)
-        StopCoroutine("ParryRoutine");
-        StartCoroutine(ParryRoutine(1.5f)); // 0.8초는 애니메이션 길이에 맞춰 조절
-    }
-
-    private void ExecuteAttack()
-    {
-        if (anim == null) return;
-
-        // 공격 트리거 실행
-        switch (currentStance)
-        {
-            case CombatStance.Top: anim.SetTrigger("IsTopAttack"); break;
-            case CombatStance.Left: anim.SetTrigger("IsLeftAttack"); break;
-            case CombatStance.Right: anim.SetTrigger("IsRightAttack"); break;
-        }
-
-        // --- 적 피격 판정 추가 (Raycast) ---
-        RaycastHit hit;
-        Vector3 rayStart = transform.position + Vector3.up * 0.5f; // 가슴 높이에서 레이 발사
-        if (Physics.Raycast(rayStart, transform.forward, out hit, attackRange, enemyLayer))
-        {
-            EnemyAI enemy = hit.collider.GetComponent<EnemyAI>();
-            if (enemy != null)
-            {
-                // 성공적으로 맞추었을 때 적의 피격 함수 호출
-                enemy.TakeDamage(this.currentStance);
-            }
-        }
-    }
-
-    // --- 플레이어 피격 함수 (적 스크립트에서 호출용) ---
-    public void TakeDamage(CombatStance attackerStance)
-    {
-        if (isHitState) return;
-        StopAllCoroutines();
-
-        string triggerName = (attackerStance == CombatStance.Top) ? "IsTopHit" : "IsSideHit";
-        float duration = hitDurationDict.ContainsKey(attackerStance == CombatStance.Top ? "TopHit" : "SideHit")
-                         ? hitDurationDict[attackerStance == CombatStance.Top ? "TopHit" : "SideHit"] : 0.5f;
-
-        StartCoroutine(PlayerHitRoutine(triggerName, duration));
-    }
-
-    private IEnumerator PlayerHitRoutine(string triggerName, float duration)
-    {
-        isHitState = true;
-        isInteracting = false;
-        anim.SetTrigger(triggerName);
-
-        yield return new WaitForSeconds(duration);
-
-        isHitState = false;
-        isInteracting = true;
+        // 2. 이동 및 애니메이션 업데이트
+        ApplyMovement();
+        UpdateAnimationParams();
+        UpdateActionLayerWeight();
     }
 
     void LateUpdate()
     {
         if (targetObject == null || cameraHolder == null) return;
-        if (isInteracting)
+
+        Vector3 targetDir = targetObject.position - transform.position;
+        targetDir.y = 0;
+        if (targetDir != Vector3.zero)
+            transform.rotation = Quaternion.LookRotation(targetDir);
+
+        float targetX = 0;
+        if (currentStance == CombatStance.Left) targetX = shoulderOffset;
+        else if (currentStance == CombatStance.Right) targetX = -shoulderOffset;
+
+        currentXOffset = Mathf.Lerp(currentXOffset, targetX, Time.deltaTime * camTransitionSpeed);
+        cameraHolder.localPosition = new Vector3(currentXOffset, cameraHolder.localPosition.y, cameraHolder.localPosition.z);
+
+        Vector3 lookPoint = transform.position + transform.forward * 50f;
+        cameraHolder.LookAt(lookPoint);
+    }
+
+    private void HandleGuardInput()
+    {
+        if (guardAction.IsPressed() && currentStamina > 0)
         {
-            Vector3 targetDir = targetObject.position - transform.position;
-            targetDir.y = 0;
-            if (targetDir != Vector3.zero)
-                transform.rotation = Quaternion.LookRotation(targetDir);
+            if (!isGuarding && currentStamina >= minStaminaToGuard)
+                isGuarding = true;
         }
-        UpdateCameraTransform();
+        else isGuarding = false;
+
+        if (currentStamina <= 0) isGuarding = false;
+    }
+
+    private void HandleStaminaRegen()
+    {
+        if (!isGuarding && !isHitState && currentStamina < maxStamina)
+        {
+            currentStamina += staminaRegenRate * Time.deltaTime;
+            currentStamina = Mathf.Min(currentStamina, maxStamina);
+        }
+    }
+
+    private void ApplyMovement()
+    {
+        // 공격/패링/피격 중일 때는 중력만 적용하고 이동은 씹음
+        if (!isInteracting || isHitState)
+        {
+            ApplyGravityOnly();
+            return;
+        }
+
+        bool isGrounded = controller.isGrounded;
+        anim.SetBool("IsGrounded", isGrounded);
+        if (isGrounded && velocity.y < 0) velocity.y = -2f;
+
+        Vector2 moveInput = moveAction.ReadValue<Vector2>();
+        float speedMultiplier = isGuarding ? guardSpeedMultiplier : 1.0f;
+
+        Vector3 move = (transform.forward * moveInput.y + transform.right * moveInput.x);
+        if (move.magnitude > 1f) move.Normalize();
+
+        controller.Move(move * moveSpeed * speedMultiplier * Time.deltaTime);
+
+        anim.SetFloat("InputX", moveInput.x, 0.1f, Time.deltaTime);
+        anim.SetFloat("InputY", moveInput.y, 0.1f, Time.deltaTime);
+
+        // 평상시에도 중력 적용
+        ApplyGravityOnly();
+
+        currentIKWeight = Mathf.MoveTowards(currentIKWeight, isGrounded ? ikWeight : 0f, Time.deltaTime * 5f);
+    }
+
+    private void ExecuteAttack()
+    {
+        if (!isInteracting) return;
+        StartCoroutine(nameof(AttackRoutine));
+    }
+
+    private IEnumerator AttackRoutine()
+    {
+        isInteracting = false;
+        isGuarding = false;
+
+        // [핵심] 다른 공격/피격 Bool이 켜져 있으면 Any State가 헷갈려하므로 싹 다 꺼줍니다.
+        ResetAllActionBools();
+
+        string boolName = currentStance == CombatStance.Top ? "IsTopAttack" :
+                          currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
+
+        anim.SetBool(boolName, true); // Any State가 이걸 보고 즉시 애니메이션 실행
+
+        CheckCombatHit(15f, false);
+
+        yield return new WaitForSeconds(attackDuration);
+
+        anim.SetBool(boolName, false); // 애니메이션이 끝날 때쯤 꺼줌
+        isInteracting = true;
+    }
+
+    // [중요] 모든 애니메이션 파라미터를 깨끗하게 밀어버리는 함수
+    private void ResetAllActionBools()
+    {
+        anim.SetBool("IsTopAttack", false);
+        anim.SetBool("IsLeftAttack", false);
+        anim.SetBool("IsRightAttack", false);
+        anim.SetBool("IsParry", false);
+        anim.SetBool("IsTopHit", false);
+        anim.SetBool("IsLeftHit", false);
+        anim.SetBool("IsRightHit", false);
+    }
+
+    private void ExecuteParry()
+    {
+        if (!isInteracting) return;
+        StartCoroutine(nameof(ParryRoutine));
+    }
+
+    private IEnumerator ParryRoutine()
+    {
+        isInteracting = false;
+        isGuarding = false;
+
+        anim.SetBool("IsParry", true);
+        CheckCombatHit(parryDamage, true);
+
+        yield return new WaitForSeconds(parryDuration);
+
+        anim.SetBool("IsParry", false);
+        isInteracting = true;
+    }
+
+    // [수정] 공격 시 적에게 자기 자신(this)을 넘겨주도록 변경
+    private void CheckCombatHit(float damage, bool isParry)
+    {
+        Vector3 rayStart = transform.position + Vector3.up * 0.45f;
+        RaycastHit hit;
+        if (Physics.SphereCast(rayStart, 0.2f, transform.forward, out hit, attackRange, enemyLayer))
+        {
+            EnemyAI enemy = hit.collider.GetComponent<EnemyAI>();
+            if (enemy != null)
+            {
+                // 나(this)를 인자로 넘겨서 적이 나를 역경직 시킬 수 있게 함
+                enemy.TakeDamage(currentStance, this);
+            }
+        }
+    }
+
+    // [추가] 역경직(리코일) 코루틴
+    private IEnumerator RecoilRoutine(float duration)
+    {
+        isInteracting = false;
+        // 때린 놈이 움찔하는 애니메이션이 있다면 여기서 실행 (없으면 그냥 멈춤)
+        // anim.SetTrigger("IsRecoil"); 
+        yield return new WaitForSeconds(duration);
+        isInteracting = true;
+    }
+
+    // [수정] 피격 및 가드 판정 로직
+    public void TakeDamage(CombatStance attackerStance, EnemyAI attacker)
+    {
+        if (isDead || isHitState) return;
+
+        // 1. 가드 성공 판정
+        if (isGuarding && CanBlock(attackerStance))
+        {
+            currentStamina -= guardStaminaCost; // 스테미나 많이 깎음
+
+            // [메리트] 나를 때린 적에게 역경직 부여
+            if (attacker != null)
+            {
+                attacker.StartCoroutine("RecoilRoutine", 0.8f); // 적 0.8초간 멍 때림
+            }
+
+            // 스테미나 오링 시 가드 강제 해제
+            if (currentStamina <= 0)
+            {
+                currentStamina = 0;
+                isGuarding = false;
+            }
+            return;
+        }
+
+        // 2. 가드 실패 시 (생짜 피격)
+        currentHealth -= 20f;
+        if (currentHealth <= 0) { Die(); return; }
+
+        StopAllCoroutines();
+        ResetAllActionBools();
+
+        string hitBool = (attackerStance == CombatStance.Top) ? "IsTopHit" : (attackerStance == CombatStance.Left) ? "IsRightHit" : "IsLeftHit";
+        float duration = (attackerStance == CombatStance.Top) ? hitDurationDict.GetValueOrDefault("TopHit", 0.5f) : hitDurationDict.GetValueOrDefault("SideHit", 0.5f);
+
+        StartCoroutine(PlayerHitRoutine(hitBool, duration));
+    }
+
+    private void Die()
+    {
+        isDead = true;
+        anim.SetBool("IsDead", true); // Any State에서 사망 모션 실행
+
+        // 조작 및 인터랙션 영구 정지
+        isInteracting = false;
+        StopAllCoroutines();
+        actionMap.Disable();
+
+        // 사망 후 처리 루틴 시작
+        StartCoroutine(DeadSequence());
+    }
+
+    private IEnumerator DeadSequence()
+    {
+        // 1. 쓰러지는 모션을 감상할 시간 (2~3초)
+        yield return new WaitForSeconds(3.0f);
+
+        // 2. 여기에 UI를 띄우는 코드를 넣으세요.
+        // UIManager.Instance.ShowGameOverUI(); 
+
+        // 3. 만약 즉시 재시작하고 싶다면 (씬 다시 로드)
+        // UnityEngine.SceneManagement.SceneManager.LoadScene(UnityEngine.SceneManagement.SceneManager.GetActiveScene().name);
+
+        // 4. 메인 메뉴로 보내고 싶다면
+        // UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
+    }
+
+    private bool CanBlock(CombatStance attackerStance)
+    {
+        if (attackerStance == CombatStance.Top && currentStance == CombatStance.Top) return true;
+        if (attackerStance == CombatStance.Left && currentStance == CombatStance.Right) return true;
+        if (attackerStance == CombatStance.Right && currentStance == CombatStance.Left) return true;
+        return false;
+    }
+
+    private IEnumerator PlayerHitRoutine(string boolName, float duration)
+    {
+        UpdateCameraPositionInHit();
+
+        isHitState = true;
+        isInteracting = false;
+        isGuarding = false;
+
+        anim.SetBool(boolName, true); // Any State가 이 Bool을 보고 즉시 피격 모션 재생
+        yield return new WaitForSeconds(duration);
+
+        anim.SetBool(boolName, false);
+        isHitState = false;
+        isInteracting = true;
     }
 
     private void HandleAimStep()
     {
         Vector2 lookInput = lookAction.ReadValue<Vector2>();
-
-        // 입력이 있을 때만 누적
         if (lookInput.sqrMagnitude > 0.001f)
         {
             mouseAccumulatorX += lookInput.x;
             mouseAccumulatorY += lookInput.y;
-
-            // 임계값 도달 시
             if (Mathf.Abs(mouseAccumulatorX) > mouseStepThreshold || Mathf.Abs(mouseAccumulatorY) > mouseStepThreshold)
             {
                 DetermineStance();
-                // 상태 변화 후 누적치 초기화 대신 일정량만 감소시켜 연속적인 조작 유도 가능
-                mouseAccumulatorX = 0;
-                mouseAccumulatorY = 0;
+                mouseAccumulatorX = 0; mouseAccumulatorY = 0;
             }
         }
         else
         {
-            // 입력 없을 때 감쇠
             mouseAccumulatorX = Mathf.Lerp(mouseAccumulatorX, 0, Time.deltaTime * mouseDecaySpeed);
             mouseAccumulatorY = Mathf.Lerp(mouseAccumulatorY, 0, Time.deltaTime * mouseDecaySpeed);
         }
@@ -269,91 +390,75 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void DetermineStance()
     {
-        // 각도 기반 판정 (조금 더 정교한 포 아너 스타일)
-        // Y가 일정 이상 크면 무조건 Top 우선 순위
         if (mouseAccumulatorY > mouseStepThreshold && mouseAccumulatorY > Mathf.Abs(mouseAccumulatorX))
-        {
             currentStance = CombatStance.Top;
-        }
         else if (Mathf.Abs(mouseAccumulatorX) > mouseStepThreshold)
-        {
             currentStance = (mouseAccumulatorX < 0) ? CombatStance.Left : CombatStance.Right;
-        }
     }
 
-    private void UpdateCameraTransform()
+    private void UpdateAnimationParams()
     {
-        if (targetObject == null || cameraHolder == null) return;
-
-        float targetX = 0;
-        if (currentStance == CombatStance.Left) targetX = shoulderOffset;
-        else if (currentStance == CombatStance.Right) targetX = -shoulderOffset;
-        // Top일 때는 중앙(0) 유지
-
-        currentXOffset = Mathf.Lerp(currentXOffset, targetX, Time.deltaTime * camTransitionSpeed);
-        cameraHolder.localPosition = new Vector3(currentXOffset, cameraHolder.localPosition.y, cameraHolder.localPosition.z);
-        
-        Vector3 lookPoint = transform.position + transform.forward * 50f;
-        cameraHolder.LookAt(lookPoint);
+        anim.SetBool("IsGuarding", isGuarding);
+        anim.SetFloat("Stance", (float)currentStance);
     }
 
     private void UpdateActionLayerWeight()
     {
-        if (anim == null || actionLayerIndex == -1) return;
+        // [수정] 평상시에도 Action Layer의 애니메이션(Idle 등)이 보여야 하므로 
+        // 특수한 상황이 아니더라도 기본적으로 1을 유지하도록 변경하거나, 
+        // 하위 레이어(Base)가 보이길 원한다면 조건을 세밀하게 조정해야 합니다.
 
-        // 공격 중일 때도 아주 약간의 블렌딩 시간을 주는 것이 시각적으로 부드럽습니다.
-        float targetWeight = isInteracting ? 1.0f : 0.0f;
-        float currentW = anim.GetLayerWeight(actionLayerIndex);
+        // 만약 Action Layer가 상시 노출되어야 하는 레이어라면 그냥 1f로 고정해도 됩니다.
+        float targetWeight = 1f;
 
-        // 공격 시에는 더 빠르게(20f), 복귀 시에는 적당히(10f) 블렌딩
-        float lerpSpeed = isInteracting ? 10f : 20f;
-        anim.SetLayerWeight(actionLayerIndex, Mathf.MoveTowards(currentW, targetWeight, Time.deltaTime * lerpSpeed));
+        // 만약 특정 상황에서만 Action Layer가 덮어씌워야 한다면 기존 로직을 유지하되,
+        // Idle이 Base Layer에 있다면 현재 상태가 정상입니다.
+        // 하지만 Idle이 Action Layer에 있다면 아래처럼 항상 1로 유지하세요.
+        anim.SetLayerWeight(actionLayerIndex, Mathf.MoveTowards(anim.GetLayerWeight(actionLayerIndex), targetWeight, Time.deltaTime * 20f));
     }
 
     private void OnAnimatorIK(int layerIndex)
     {
         if (!useFootIK || anim == null) return;
-
-        // 가중치를 먼저 적용
         anim.SetIKPositionWeight(AvatarIKGoal.LeftFoot, currentIKWeight);
         anim.SetIKRotationWeight(AvatarIKGoal.LeftFoot, currentIKWeight);
         anim.SetIKPositionWeight(AvatarIKGoal.RightFoot, currentIKWeight);
         anim.SetIKRotationWeight(AvatarIKGoal.RightFoot, currentIKWeight);
-
-        if (currentIKWeight > 0.01f)
-        {
-            ApplyFootIK(AvatarIKGoal.LeftFoot);
-            ApplyFootIK(AvatarIKGoal.RightFoot);
-        }
+        if (currentIKWeight > 0.01f) { ApplyFootIK(AvatarIKGoal.LeftFoot); ApplyFootIK(AvatarIKGoal.RightFoot); }
     }
 
     private void ApplyFootIK(AvatarIKGoal goal)
     {
         Vector3 anklePos = anim.GetIKPosition(goal);
-
-        // 발 위에서 아래로 레이캐스트 (안정성을 위해 1f 높이에서 쏨)
         if (Physics.Raycast(new Ray(anklePos + Vector3.up * 1f, Vector3.down), out RaycastHit hit, 2f, groundLayer))
         {
-            Vector3 targetPos = hit.point;
-            targetPos.y += footOffset;
-
-            // [핵심 해결] 발이 허공에 떠 있을 때(발차기, 크게 내딛기 등)는 
-            // 억지로 바닥으로 끌어내리지 않고 애니메이션 원본 높이(anklePos)를 그대로 사용합니다.
-            if (anklePos.y > targetPos.y)
-            {
-                targetPos.y = anklePos.y;
-            }
-
+            Vector3 targetPos = hit.point; targetPos.y += footOffset;
+            if (anklePos.y > targetPos.y) targetPos.y = anklePos.y;
             anim.SetIKPosition(goal, targetPos);
             anim.SetIKRotation(goal, Quaternion.LookRotation(Vector3.ProjectOnPlane(transform.forward, hit.normal), hit.normal));
         }
     }
 
-    //private void ResetActionLayer()
-    //{
-    //    // 시간이 다 되면 다시 평소(걷기/대기) 상태로 돌아갑니다.
-    //    isInteracting = true;
-    //}
+    private void ApplyGravityOnly()
+    {
+        velocity.y += gravity * Time.deltaTime;
+        controller.Move(velocity * Time.deltaTime);
+    }
+
+    private void UpdateCameraPositionInHit()
+    {
+        if (cameraHolder == null) return;
+
+        float targetX = 0;
+        if (currentStance == CombatStance.Left) targetX = shoulderOffset;
+        else if (currentStance == CombatStance.Right) targetX = -shoulderOffset;
+
+        currentXOffset = targetX;
+        cameraHolder.localPosition = new Vector3(currentXOffset, cameraHolder.localPosition.y, cameraHolder.localPosition.z);
+
+        // 캐릭터 정면 50m 앞을 바라보게 설정
+        cameraHolder.LookAt(transform.position + transform.forward * 50f);
+    }
 
     void OnDisable() => actionMap.Disable();
 }
