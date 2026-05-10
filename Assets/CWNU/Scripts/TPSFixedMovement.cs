@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using Unity.Cinemachine;
+using System;
 
 public class TPSFixedMovement : MonoBehaviour
 {
@@ -111,7 +112,8 @@ public class TPSFixedMovement : MonoBehaviour
 
             if (parryAction.triggered)
             {
-                ExecuteParry();
+                ExecuteParry();  // 테스트시 주석 처리 필요
+                //GetParried();  // 테스트용: 컨트롤 누르면 '패링 당함' 실행 (약 3초 정지)
             }
         }
 
@@ -226,6 +228,7 @@ public class TPSFixedMovement : MonoBehaviour
         anim.SetBool("IsLeftAttack", false);
         anim.SetBool("IsRightAttack", false);
         anim.SetBool("IsParry", false);
+        anim.SetBool("IsParried", false);
         anim.SetBool("IsTopHit", false);
         anim.SetBool("IsLeftHit", false);
         anim.SetBool("IsRightHit", false);
@@ -235,6 +238,20 @@ public class TPSFixedMovement : MonoBehaviour
     {
         if (!isInteracting) return;
         StartCoroutine(nameof(ParryRoutine));
+    }
+    public void GetParried()
+    {
+        // 이미 죽었거나 피격 중이면 무시 (상황에 따라 isHitState 조건은 빼셔도 됩니다)
+        if (isDead) return;
+
+        // 현재 진행 중인 공격 코루틴 등을 강제 중단
+        StopAllCoroutines();
+
+        // Any State에서 꼬이지 않도록 모든 애니메이션 파라미터 초기화
+        ResetAllActionBools();
+
+        // 역경직(패링 당함) 루틴 시작
+        StartCoroutine(GetParriedRoutine());
     }
 
     private IEnumerator ParryRoutine()
@@ -248,6 +265,40 @@ public class TPSFixedMovement : MonoBehaviour
         yield return new WaitForSeconds(parryDuration);
 
         anim.SetBool("IsParry", false);
+        isInteracting = true;
+    }
+
+    private IEnumerator GetParriedRoutine()
+    {
+        UpdateCameraPositionInHit();
+
+        isHitState = true;
+        isInteracting = false;
+        isGuarding = false;
+
+        // 만약을 대비해 애니메이션 속도를 정상화
+        anim.speed = 1f;
+
+        // 1. 패링 당하는 애니메이션 시작
+        anim.SetBool("IsParried", true);
+
+        // 2. 애니메이션이 최고점에 도달할 중간 포즈까지 도달할 짧은 시간 대기
+        yield return new WaitForSeconds(0.3f);
+
+        // 3. 애니메이션 재생 느리게
+        anim.speed = 0.2f;
+        yield return new WaitForSeconds(1.7375f);
+
+        // 4. 애니메이션 재생 속도 정상 복구
+        anim.speed = 1f;
+
+        // 5. 파라미터 초기화
+        anim.SetBool("IsParried", false);
+
+        // 6. 남은 분량만큼 대기
+        yield return new WaitForSeconds(0.7625f);
+
+        isHitState = false;
         isInteracting = true;
     }
 
