@@ -42,6 +42,7 @@ public class TPSFixedMovement : MonoBehaviour
     public AnimationClip sideHitClip;
     public float attackDuration = 1.0f;
     public float parryDuration = 0.8f;
+    public float criticalAttackedDuration = 0.3f;
     public float parryDamage = 20f;
     public bool isHitState = false;
     public bool isGuarding = false;
@@ -70,6 +71,7 @@ public class TPSFixedMovement : MonoBehaviour
     private InputAction moveAction, lookAction, guardAction, parryAction;
 
     private bool isDead = false;
+    private Vector3 externalForce;
 
     void Awake()
     {
@@ -110,10 +112,16 @@ public class TPSFixedMovement : MonoBehaviour
                 ExecuteAttack();
             }
 
+            if (Keyboard.current.jKey.wasPressedThisFrame) // 테스트용
+            {
+                //GetCriticalAttackedUpper();
+                //GetCriticalAttackedUnder();
+                Die();
+            }
+
             if (parryAction.triggered)
             {
-                ExecuteParry();  // 테스트시 주석 처리 필요
-                //GetParried();  // 테스트용: 컨트롤 누르면 '패링 당함' 실행 (약 3초 정지)
+                ExecuteParry();  
             }
         }
 
@@ -166,6 +174,11 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void ApplyMovement()
     {
+        if (externalForce.magnitude > 0.1f)
+        {
+            controller.Move(externalForce * Time.deltaTime);
+        }
+
         // 공격/패링/피격 중일 때는 중력만 적용하고 이동은 씹음
         if (!isInteracting || isHitState)
         {
@@ -231,13 +244,28 @@ public class TPSFixedMovement : MonoBehaviour
         anim.SetBool("IsParried", false);
         anim.SetBool("IsTopHit", false);
         anim.SetBool("IsLeftHit", false);
-        anim.SetBool("IsRightHit", false);
+        anim.SetBool("IsRightHit", false); 
+        anim.SetBool("IsCriAtckUp", false);
+        anim.SetBool("IsCriAtckUnder", false);
     }
 
     private void ExecuteParry()
     {
         if (!isInteracting) return;
         StartCoroutine(nameof(ParryRoutine));
+    }
+    private IEnumerator ParryRoutine()
+    {
+        isInteracting = false;
+        isGuarding = false;
+
+        anim.SetBool("IsParry", true);
+        CheckCombatHit(parryDamage, true);
+
+        yield return new WaitForSeconds(parryDuration);
+
+        anim.SetBool("IsParry", false);
+        isInteracting = true;
     }
     public void GetParried()
     {
@@ -253,21 +281,6 @@ public class TPSFixedMovement : MonoBehaviour
         // 역경직(패링 당함) 루틴 시작
         StartCoroutine(GetParriedRoutine());
     }
-
-    private IEnumerator ParryRoutine()
-    {
-        isInteracting = false;
-        isGuarding = false;
-
-        anim.SetBool("IsParry", true);
-        CheckCombatHit(parryDamage, true);
-
-        yield return new WaitForSeconds(parryDuration);
-
-        anim.SetBool("IsParry", false);
-        isInteracting = true;
-    }
-
     private IEnumerator GetParriedRoutine()
     {
         UpdateCameraPositionInHit();
@@ -299,6 +312,100 @@ public class TPSFixedMovement : MonoBehaviour
         yield return new WaitForSeconds(0.7625f);
 
         isHitState = false;
+        isInteracting = true;
+    }
+
+    private void GetCriticalAttackedUpper()
+    {
+        // 이미 다른 행동 중이라면 무시
+        if (!isInteracting) return;
+
+        StartCoroutine(nameof(GetCriticalAttackedUpperRoutine));
+    }
+
+    private IEnumerator GetCriticalAttackedUpperRoutine()
+    {
+        isInteracting = false;
+        isGuarding = false;
+        ResetAllActionBools();
+
+        // 1. 애니메이션 실행
+        anim.CrossFadeInFixedTime("CriticalAttackedUpper", 0.1f, anim.GetLayerIndex("Base Layer"));
+        anim.CrossFadeInFixedTime("CriticalAttackedUpper", 0.1f, anim.GetLayerIndex("Action Layer"));
+
+        // 2. 물리적으로 날려보낼 방향과 힘 설정 (예: 뒤로 10의 힘으로)
+        // 앞으로 날아가고 싶다면 transform.forward를 사용하세요.
+        externalForce = -transform.forward * 2.5f;
+
+        float elapsed = 0f;
+        float duration = 3.1f; // 애니메이션 지속 시간
+
+        while (elapsed < duration)
+        {
+            // 시간에 따라 힘을 서서히 줄여줌 (마찰력 효과)
+            externalForce = Vector3.Lerp(externalForce, Vector3.zero, Time.deltaTime * 2f);
+
+            // CharacterController로 실제 이동 적용
+            controller.Move(externalForce * Time.deltaTime);
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        externalForce = Vector3.zero;
+        isInteracting = true;
+    }
+    
+    private void GetCriticalAttackedUnder()
+    {
+        // 이미 다른 행동 중이라면 무시
+        if (!isInteracting) return;
+
+        StartCoroutine(nameof(GetCriticalAttackedUnderRoutine));
+    }
+
+    private IEnumerator GetCriticalAttackedUnderRoutine()
+    {
+        isInteracting = false;
+        isGuarding = false;
+        ResetAllActionBools();
+
+        // 1. 애니메이션 실행
+        anim.CrossFadeInFixedTime("CriticalAttackedUnder", 0.1f, anim.GetLayerIndex("Base Layer"));
+        anim.CrossFadeInFixedTime("CriticalAttackedUnder", 0.1f, anim.GetLayerIndex("Action Layer"));
+
+        // 2. 물리적으로 날려보낼 방향과 힘 설정 (예: 뒤로 10의 힘으로)
+        // 앞으로 날아가고 싶다면 transform.forward를 사용하세요.
+        externalForce = Vector3.zero;
+
+        float elapsed = 0f;
+        float duration = 3.1f;
+        float forceStartTime = 2.6f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            // 2.4초가 되는 "순간"에 딱 한 번만 힘을 충전함
+            if (elapsed >= forceStartTime)
+            {
+                // 아직 힘이 충전되지 않았다면 (처음 forceStartTime 초 달성 시)
+                if (externalForce == Vector3.zero)
+                {
+                    externalForce = -transform.forward * 1.0f;
+                }
+                // 힘을 서서히 줄임
+                externalForce = Vector3.Lerp(externalForce, Vector3.zero, Time.deltaTime * 2f);
+                // 실제 이동 적용
+                controller.Move(externalForce * Time.deltaTime);
+            }
+            else
+            {
+                // 2.4초 전에는 중력만 적용해서 바닥에 붙여둠
+                ApplyGravityOnly();
+            }
+            yield return null;
+        }
+        externalForce = Vector3.zero;
         isInteracting = true;
     }
 
