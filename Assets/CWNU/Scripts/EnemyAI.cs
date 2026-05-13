@@ -63,6 +63,16 @@ public class EnemyAI : MonoBehaviour
         if (sideHitClip != null) hitDurationDict["SideHit"] = sideHitClip.length;
     }
 
+    // [SOUND] 애니메이션 이벤트 수신기: 발걸음 소리
+    public void PlayFootstep()
+    {
+        // 추격 상태일 때만 발걸음 소리 재생
+        if (currentState == AIState.Chase && SoundManager.Instance != null)
+        {
+            SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.footstepSounds, 0.2f);
+        }
+    }
+
     void Update()
     {
         if (isDead) return;
@@ -106,6 +116,11 @@ public class EnemyAI : MonoBehaviour
     {
         isInteracting = true; isGuarding = false; currentStance = (CombatStance)Random.Range(0, 3);
         currentStamina -= 15f; ResetAllActionBools();
+
+        // [SOUND] 적 공격 휘두르는 소리
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.5f);
+
         string bName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
         anim.SetBool(bName, true); CheckCombatHit();
         yield return new WaitForSeconds(attackDuration);
@@ -131,6 +146,10 @@ public class EnemyAI : MonoBehaviour
         // 1. 가드 성공 판정
         if (isGuarding && CanBlock(attackerStance))
         {
+            // [SOUND] 적이 가드 성공 (금속 충돌음)
+            if (SoundManager.Instance != null)
+                SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.clashSounds, 0.7f);
+
             currentStamina -= guardStaminaCost; // 스테미나 대량 소모
 
             // [메리트] 나를 때린 플레이어에게 역경직 부여
@@ -144,6 +163,10 @@ public class EnemyAI : MonoBehaviour
         }
 
         // 2. 가드 실패 시 (생짜 피격)
+        // [SOUND] 적 피격 소리
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.hitSounds, 0.8f);
+
         currentHealth -= 20f;
         if (currentHealth <= 0) { Die(); return; }
 
@@ -175,7 +198,15 @@ public class EnemyAI : MonoBehaviour
         if (!isDead) currentState = AIState.Chase;
     }
 
-    private void Die() { isDead = true; StopAllCoroutines(); ResetAllActionBools(); anim.SetBool("IsDead", true); currentState = AIState.Dead; controller.enabled = false; }
+    private void Die() { 
+        isDead = true; StopAllCoroutines(); ResetAllActionBools(); anim.SetBool("IsDead", true); currentState = AIState.Dead; controller.enabled = false;
+
+        // [SOUND] 적 사망 및 플레이어 승리 사운드
+        if (SoundManager.Instance != null)
+        {
+            SoundManager.Instance.PlaySingleSFX(SoundManager.Instance.victorySound, 1.0f);
+        }
+    }
 
     private void ResetAllActionBools() { anim.SetBool("IsTopAttack", false); anim.SetBool("IsLeftAttack", false); anim.SetBool("IsRightAttack", false); anim.SetBool("IsTopHit", false); anim.SetBool("IsLeftHit", false); anim.SetBool("IsRightHit", false); }
 
@@ -190,6 +221,10 @@ public class EnemyAI : MonoBehaviour
     {
         isInteracting = true; // 공격 중인 것처럼 처리해서 다음 행동 차단
         currentState = AIState.Idle; // AI 로직 일시 중지
+
+        // [SOUND] 적이 공격을 막혔을 때의 둔탁한 소리 (가드 소리와 별개로 연출 가능)
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.parrySounds, 0.6f);
 
         // 공격 애니메이션 강제 종료 (Any State에서 리셋되도록)
         ResetAllActionBools();

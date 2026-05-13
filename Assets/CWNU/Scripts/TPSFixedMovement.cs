@@ -95,6 +95,9 @@ public class TPSFixedMovement : MonoBehaviour
 
         if (topHitClip != null) hitDurationDict["TopHit"] = topHitClip.length;
         if (sideHitClip != null) hitDurationDict["SideHit"] = sideHitClip.length;
+
+        if (SoundManager.Instance != null)
+            SoundManager.Instance.PlayBGM(0.2f);
     }
 
     void Update()
@@ -207,6 +210,17 @@ public class TPSFixedMovement : MonoBehaviour
         currentIKWeight = Mathf.MoveTowards(currentIKWeight, isGrounded ? ikWeight : 0f, Time.deltaTime * 5f);
     }
 
+    // [SOUND] 애니메이션 이벤트용 발걸음 함수
+    public void PlayFootstep()
+    {
+        // 이동 중이고 인터랙션 중일 때만 소리 재생
+        Vector2 moveInput = moveAction.ReadValue<Vector2>();
+        if (moveInput.magnitude > 0.1f && isInteracting && !isHitState)
+        {
+            SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.footstepSounds, 0.3f);
+        }
+    }
+
     private void ExecuteAttack()
     {
         if (!isInteracting) return;
@@ -220,6 +234,9 @@ public class TPSFixedMovement : MonoBehaviour
 
         // [핵심] 다른 공격/피격 Bool이 켜져 있으면 Any State가 헷갈려하므로 싹 다 꺼줍니다.
         ResetAllActionBools();
+
+        // [SOUND] 공격 휘두르기 소리 재생
+        SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.6f);
 
         string boolName = currentStance == CombatStance.Top ? "IsTopAttack" :
                           currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
@@ -259,6 +276,9 @@ public class TPSFixedMovement : MonoBehaviour
         isInteracting = false;
         isGuarding = false;
 
+        // [SOUND] 패링 시도 소리 (공격 소리와 공유하거나 별도 할당 가능)
+        SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.5f);
+
         anim.SetBool("IsParry", true);
         CheckCombatHit(parryDamage, true);
 
@@ -271,6 +291,9 @@ public class TPSFixedMovement : MonoBehaviour
     {
         // 이미 죽었거나 피격 중이면 무시 (상황에 따라 isHitState 조건은 빼셔도 됩니다)
         if (isDead) return;
+
+        // [SOUND] 패링 당했을 때 (역경직 시작 시 둔탁한 소리)
+        SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.parrySounds, 1.0f);
 
         // 현재 진행 중인 공격 코루틴 등을 강제 중단
         StopAllCoroutines();
@@ -443,6 +466,9 @@ public class TPSFixedMovement : MonoBehaviour
         // 1. 가드 성공 판정
         if (isGuarding && CanBlock(attackerStance))
         {
+            // [SOUND] 가드 성공 (Clash) 소리 재생
+            SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.clashSounds, 0.8f);
+
             currentStamina -= guardStaminaCost; // 스테미나 많이 깎음
 
             // [메리트] 나를 때린 적에게 역경직 부여
@@ -461,6 +487,9 @@ public class TPSFixedMovement : MonoBehaviour
         }
 
         // 2. 가드 실패 시 (생짜 피격)
+        // [SOUND] 피격(Hit) 소리 재생
+        SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.hitSounds, 0.9f);
+
         currentHealth -= 20f;
         if (currentHealth <= 0) { Die(); return; }
 
@@ -477,6 +506,9 @@ public class TPSFixedMovement : MonoBehaviour
     {
         isDead = true;
         anim.SetBool("IsDead", true); // Any State에서 사망 모션 실행
+
+        // [SOUND] 사망/패배 소리 재생
+        SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.defeatSounds, 1.0f);
 
         // 조작 및 인터랙션 영구 정지
         isInteracting = false;
