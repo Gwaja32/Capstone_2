@@ -711,6 +711,10 @@ PrefabInstance:
       value: 7
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: 7f155d1f59fd47245afd42dadc58d552, type: 3}
+      propertyPath: m_Enabled
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 5866666021909216657, guid: 7f155d1f59fd47245afd42dadc58d552, type: 3}
       propertyPath: m_Controller
       value: 
       objectReference: {fileID: 9100000, guid: 24bf9456203485f47a8dc5dc061a3829, type: 2}
@@ -3404,6 +3408,8 @@ MonoBehaviour:
   attackCooldown: 3
   attackDuration: 1
   isGuarding: 0
+  isParried: 0
+  isAttacking: 0
   topHitClip: {fileID: 1827226128182048838, guid: 8c519bb408cffcf4288f1abfa5c5d7eb, type: 3}
   sideHitClip: {fileID: 1827226128182048838, guid: 0af143ad8d6af3e46a8ad85f3aad6c47, type: 3}
   actionLayerName: Action Layer

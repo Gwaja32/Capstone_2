@@ -1,9 +1,10 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
+using Unity.Cinemachine;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using Unity.Cinemachine;
-using System;
+using static UnityEngine.EventSystems.EventTrigger;
 
 public class TPSFixedMovement : MonoBehaviour
 {
@@ -70,8 +71,10 @@ public class TPSFixedMovement : MonoBehaviour
     private InputActionMap actionMap;
     private InputAction moveAction, lookAction, guardAction, parryAction;
 
-    private bool isDead = false;
+    private bool isDead = false; 
+    private bool isCriticalAttacking = false;
     private Vector3 externalForce;
+    
 
     void Awake()
     {
@@ -119,7 +122,7 @@ public class TPSFixedMovement : MonoBehaviour
             {
                 //GetCriticalAttackedUpper();
                 //GetCriticalAttackedUnder();
-                Die();
+
             }
 
             if (parryAction.triggered)
@@ -138,10 +141,15 @@ public class TPSFixedMovement : MonoBehaviour
     {
         if (targetObject == null || cameraHolder == null) return;
 
-        Vector3 targetDir = targetObject.position - transform.position;
-        targetDir.y = 0;
-        if (targetDir != Vector3.zero)
-            transform.rotation = Quaternion.LookRotation(targetDir);
+        if (!isCriticalAttacking)
+        {
+            Vector3 targetDir = targetObject.position - transform.position;
+            targetDir.y = 0;
+            if (targetDir != Vector3.zero) {
+                Quaternion targetRotation = Quaternion.LookRotation(targetDir);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 15f);
+            }
+        }
 
         float targetX = 0;
         if (currentStance == CombatStance.Left) targetX = shoulderOffset;
@@ -177,6 +185,11 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void ApplyMovement()
     {
+        if (controller == null || !controller.enabled)
+        {
+            return;
+        }
+
         if (externalForce.magnitude > 0.1f)
         {
             controller.Move(externalForce * Time.deltaTime);
@@ -221,9 +234,40 @@ public class TPSFixedMovement : MonoBehaviour
         }
     }
 
+    // [중요] 모든 애니메이션 파라미터를 깨끗하게 밀어버리는 함수
+    private void ResetAllActionBools()
+    {
+        anim.SetBool("IsTopAttack", false);
+        anim.SetBool("IsLeftAttack", false);
+        anim.SetBool("IsRightAttack", false);
+        anim.SetBool("IsParry", false);
+        anim.SetBool("IsParried", false);
+        anim.SetBool("IsTopHit", false);
+        anim.SetBool("IsLeftHit", false);
+        anim.SetBool("IsRightHit", false); 
+        anim.SetBool("IsCriAtckedUp", false);
+        anim.SetBool("IsCriAtckedUnder", false);
+        anim.SetBool("IsCriAtckUp", false);
+        anim.SetBool("IsCriAtckUnder", false);
+    }
+
     private void ExecuteAttack()
     {
         if (!isInteracting) return;
+
+        Vector3 rayStart = transform.position + Vector3.up * 0.45f - transform.forward * 0.5f;
+
+        if (Physics.SphereCast(rayStart, 0.3f, transform.forward, out RaycastHit hit, attackRange, enemyLayer))
+        {
+            EnemyAI target = hit.collider.GetComponent<EnemyAI>();
+
+            if (target != null && target.isParried)
+            {
+                StartCoroutine(CriticalAttackRoutine(target));
+                return;
+            }
+        }
+
         StartCoroutine(nameof(AttackRoutine));
     }
 
@@ -251,19 +295,109 @@ public class TPSFixedMovement : MonoBehaviour
         isInteracting = true;
     }
 
-    // [중요] 모든 애니메이션 파라미터를 깨끗하게 밀어버리는 함수
-    private void ResetAllActionBools()
+    // 치명 공격 루틴
+    private IEnumerator CriticalAttackRoutine(EnemyAI targetEnemy)
     {
-        anim.SetBool("IsTopAttack", false);
-        anim.SetBool("IsLeftAttack", false);
-        anim.SetBool("IsRightAttack", false);
-        anim.SetBool("IsParry", false);
-        anim.SetBool("IsParried", false);
-        anim.SetBool("IsTopHit", false);
-        anim.SetBool("IsLeftHit", false);
-        anim.SetBool("IsRightHit", false); 
+        isCriticalAttacking = true;
+
+        isInteracting = false;
+        isGuarding = false;
+        ResetAllActionBools();
+
+        // 0. 상대 체력에 따른 공격 종류를 제일 먼저 판별합니다.
+        bool isUpperAttack = targetEnemy.currentHealth > 50f;
+
+        // 1. 위치 및 회전 보정 세팅 (적 앞으로 빨려 들어가는 연출)
+        float elapsed = 0f;
+        float alignDuration = 0.2f; // 보정에 걸리는 시간 (짧을수록 확 빨려들어감)
+
+        Vector3 startPos = transform.position;
+        Quaternion startRot = transform.rotation;
+
+        Vector3 toEnemyDir = (targetEnemy.transform.position - transform.position).normalized;
+        toEnemyDir.y = 0; // 평면 기준
+
+        // 내가 적을 바라볼 때의 '오른쪽' 방향
+        Vector3 myRightDir = Vector3.Cross(Vector3.up, toEnemyDir);
+
+        float forwardOffset = 0.3f; // 적과 유지할 앞뒤 거리
+        float myRightOffset = 0f;   // '내 기준' 좌우 이동량 (음수 = 내 왼쪽, 양수 = 내 오른쪽)
+
+        if (isUpperAttack)
+        {
+            // Upper: 칼끝을 맞추기 위해 내 몸을 왼쪽으로 살짝 이동
+            myRightOffset = 0f;
+        }
+        else
+        {
+            // Under: 모션에 맞게 수치 조절 (필요시 변경하세요)
+            myRightOffset = -0.1f;
+        }
+
+        // 목표 위치: 적의 위치 
+        // - (적에서 나를 향해 forwardOffset 만큼 떨어짐) 
+        // + (내 오른쪽 방향 벡터 * myRightOffset 만큼 이동)
+        Vector3 targetPos = targetEnemy.transform.position
+                          - (toEnemyDir * forwardOffset)
+                          + (myRightDir * myRightOffset);
+
+        targetPos.y = transform.position.y;
+
+        // 목표 회전: 적을 마주보기
+        Quaternion targetRot = Quaternion.LookRotation(toEnemyDir);
+
+        // 이동 중 물리 충돌로 덜덜거리는 것을 방지하기 위해 잠시 컨트롤러 끔
+        controller.enabled = false;
+
+        // 2. 부드럽게 위치/회전 보정
+        while (elapsed < alignDuration)
+        {
+            transform.position = Vector3.Lerp(startPos, targetPos, elapsed / alignDuration);
+            transform.rotation = Quaternion.Slerp(startRot, targetRot, elapsed / alignDuration);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // 오차 방지를 위해 최종 스냅 후 컨트롤러 원상복구
+        transform.position = targetPos;
+        transform.rotation = targetRot;
+        controller.enabled = true;
+
+        // 3. 애니메이션 실행
+        float kickImpactTime; //발차기까지 걸리는 시간
+        float totalAnimDuration; //전체 모션 시간
+
+        // 애니메이션 실행
+        if (isUpperAttack) {
+            anim.Play("CriticalAttackUpper", 0, 0f); 
+            anim.Play("CriticalAttackUpper", 1, 0f);
+
+            kickImpactTime = 2.25f;     
+            totalAnimDuration = 4.35f;
+        }
+        else
+        {
+            anim.Play("CriticalAttackUnder", 0, 0f);
+            anim.Play("CriticalAttackUnder", 1, 0f); 
+            
+            kickImpactTime = 2.45f;    
+            totalAnimDuration = 6.17f;
+        }
+
+        targetEnemy.GetParried(kickImpactTime);
+        yield return new WaitForSeconds(kickImpactTime);
+
+        // 적에게 50 데미지 전달
+        targetEnemy.GetCriticalAttacked(50f);
+
+        // 박제해둔 변수를 기준으로 대기 시간 설정 (꼬임 방지)
+        yield return new WaitForSeconds(totalAnimDuration - kickImpactTime);
+
         anim.SetBool("IsCriAtckUp", false);
         anim.SetBool("IsCriAtckUnder", false);
+        isInteracting = true;
+
+        isCriticalAttacking = false;
     }
 
     private void ExecuteParry()
@@ -300,6 +434,7 @@ public class TPSFixedMovement : MonoBehaviour
 
         // Any State에서 꼬이지 않도록 모든 애니메이션 파라미터 초기화
         ResetAllActionBools();
+        isCriticalAttacking = false;
 
         // 역경직(패링 당함) 루틴 시작
         StartCoroutine(GetParriedRoutine());
@@ -348,6 +483,7 @@ public class TPSFixedMovement : MonoBehaviour
 
     private IEnumerator GetCriticalAttackedUpperRoutine()
     {
+        isHitState = true; 
         isInteracting = false;
         isGuarding = false;
         ResetAllActionBools();
@@ -369,7 +505,9 @@ public class TPSFixedMovement : MonoBehaviour
             externalForce = Vector3.Lerp(externalForce, Vector3.zero, Time.deltaTime * 2f);
 
             // CharacterController로 실제 이동 적용
-            controller.Move(externalForce * Time.deltaTime);
+            // 여기서도 컨트롤러가 켜져있는지 확인하면 더 안전합니다.
+            if (controller.enabled)
+                controller.Move(externalForce * Time.deltaTime);
 
             elapsed += Time.deltaTime;
             yield return null;
@@ -442,8 +580,27 @@ public class TPSFixedMovement : MonoBehaviour
             EnemyAI enemy = hit.collider.GetComponent<EnemyAI>();
             if (enemy != null)
             {
+                if (isParry)
+                {
+                    // [핵심 조건] 적이 현재 '공격 중(패링 가능한 상태)'일 때만 패링 성공!
+                    //if (enemy.isAttacking)
+                    //{
+                        // 적의 패링 당함 함수 호출 (이름은 상황에 맞게 변경)
+                    enemy.GetParried(); 
+
+                        // [선택] 패링 성공 시 플레이어 화면에 이펙트나 쾌감 있는 소리 추가 가능
+                    //}
+                    //else
+                    {
+                        // 적이 공격 중이 아니면 아무 일도 일어나지 않음 (허공에 패링 헛스윙)
+                        return;
+                    }
+                }
                 // 나(this)를 인자로 넘겨서 적이 나를 역경직 시킬 수 있게 함
-                enemy.TakeDamage(currentStance, this);
+                else
+                {
+                    enemy.TakeDamage(currentStance, this);
+                }
             }
         }
     }
@@ -495,9 +652,12 @@ public class TPSFixedMovement : MonoBehaviour
 
         StopAllCoroutines();
         ResetAllActionBools();
+        isCriticalAttacking = false;
 
         string hitBool = (attackerStance == CombatStance.Top) ? "IsTopHit" : (attackerStance == CombatStance.Left) ? "IsRightHit" : "IsLeftHit";
         float duration = (attackerStance == CombatStance.Top) ? hitDurationDict.GetValueOrDefault("TopHit", 0.5f) : hitDurationDict.GetValueOrDefault("SideHit", 0.5f);
+
+        duration = duration * 0.5f;
 
         StartCoroutine(PlayerHitRoutine(hitBool, duration));
     }
@@ -631,6 +791,8 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void ApplyGravityOnly()
     {
+        if (!controller.enabled) return;
+
         velocity.y += gravity * Time.deltaTime;
         controller.Move(velocity * Time.deltaTime);
     }
