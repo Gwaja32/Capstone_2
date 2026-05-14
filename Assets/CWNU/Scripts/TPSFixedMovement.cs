@@ -582,21 +582,12 @@ public class TPSFixedMovement : MonoBehaviour
             {
                 if (isParry)
                 {
-                    // [핵심 조건] 적이 현재 '공격 중(패링 가능한 상태)'일 때만 패링 성공!
-                    //if (enemy.isAttacking)
-                    //{
-                        // 적의 패링 당함 함수 호출 (이름은 상황에 맞게 변경)
-                    enemy.GetParried(); 
-
-                        // [선택] 패링 성공 시 플레이어 화면에 이펙트나 쾌감 있는 소리 추가 가능
-                    //}
-                    //else
+                    if (enemy.isAttacking)
                     {
-                        // 적이 공격 중이 아니면 아무 일도 일어나지 않음 (허공에 패링 헛스윙)
+                        enemy.GetParried();
                         return;
                     }
                 }
-                // 나(this)를 인자로 넘겨서 적이 나를 역경직 시킬 수 있게 함
                 else
                 {
                     enemy.TakeDamage(currentStance, this);
@@ -605,12 +596,9 @@ public class TPSFixedMovement : MonoBehaviour
         }
     }
 
-    // [추가] 역경직(리코일) 코루틴
     private IEnumerator RecoilRoutine(float duration)
     {
         isInteracting = false;
-        // 때린 놈이 움찔하는 애니메이션이 있다면 여기서 실행 (없으면 그냥 멈춤)
-        // anim.SetTrigger("IsRecoil"); 
         yield return new WaitForSeconds(duration);
         isInteracting = true;
     }

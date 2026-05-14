@@ -103,28 +103,55 @@ public class EnemyAI : MonoBehaviour
         UpdateLayerWeights();
     }
 
-    private void HandleStaminaRegen() { if (!isGuarding && currentState != AIState.Hit && currentStamina < maxStamina) currentStamina += staminaRegenRate * Time.deltaTime; }
+    private void HandleStaminaRegen() { 
+        if (!isGuarding && currentState != AIState.Hit && currentStamina < maxStamina) currentStamina += staminaRegenRate * Time.deltaTime; 
+    }
 
-    private void MoveTowardsPlayer() { Vector3 dir = (playerTransform.position - transform.position).normalized; dir.y = 0; controller.Move(dir * moveSpeed * Time.deltaTime); }
+    private void MoveTowardsPlayer() { 
+        Vector3 dir = (playerTransform.position - transform.position).normalized; 
+        dir.y = 0; controller.Move(dir * moveSpeed * Time.deltaTime); 
+    }
 
-    private void HandleRotation(Vector3 targetPos) { Vector3 dir = targetPos - transform.position; dir.y = 0; if (dir != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * rotationSpeed); }
+    private void HandleRotation(Vector3 targetPos) { 
+        Vector3 dir = targetPos - transform.position; 
+        dir.y = 0; 
+        if (dir != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * rotationSpeed); 
+    }
 
-    private void HandleAttackPattern() { if (Time.time >= lastAttackTime + attackCooldown) ExecuteAttack(); }
+    private void HandleAttackPattern() { 
+        if (Time.time >= lastAttackTime + attackCooldown) ExecuteAttack(); 
+    }
 
-    private void ExecuteAttack() { if (isInteracting || currentStamina < 20f) return; StartCoroutine(AttackRoutine()); lastAttackTime = Time.time; }
+    private void ExecuteAttack() { 
+        if (isInteracting || currentStamina < 20f) return; 
+        StartCoroutine(AttackRoutine()); 
+        lastAttackTime = Time.time; 
+    }
 
     private IEnumerator AttackRoutine()
     {
-        isInteracting = true; isGuarding = false; currentStance = (CombatStance)Random.Range(0, 3);
-        currentStamina -= 15f; ResetAllActionBools();
+        isInteracting = true; isGuarding = false; isAttacking = true;
+        currentStance = (CombatStance)Random.Range(0, 3);
+        currentStamina -= 15f;
+        ResetAllActionBools();
 
         if (SoundManager.Instance != null)
             SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.5f);
 
         string bName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
-        anim.SetBool(bName, true); CheckCombatHit();
-        yield return new WaitForSeconds(attackDuration);
-        anim.SetBool(bName, false); isInteracting = false;
+        anim.SetBool(bName, true);
+
+        // 타격 판정이 발생하기 전까지 기다립니다.
+        // 이 0.4초 동안 적은 isAttacking = true 상태이므로 패링이 가능해집니다!
+        float windUpTime = 0.4f;
+        yield return new WaitForSeconds(windUpTime);
+
+        CheckCombatHit();
+
+        yield return new WaitForSeconds(attackDuration - windUpTime);
+
+        anim.SetBool(bName, false);
+        isInteracting = false; isAttacking = false;
     }
 
     private void CheckCombatHit()
@@ -184,6 +211,7 @@ public class EnemyAI : MonoBehaviour
 
         currentState = AIState.Hit;
         isAttacking = false;
+        isInteracting = false;
 
         StartCoroutine(GetParriedRoutine(kickImpactTime));
     }
@@ -214,10 +242,10 @@ public class EnemyAI : MonoBehaviour
         if (currentState == AIState.Dead) return;
 
         anim.speed = 1f;
-
         StopAllCoroutines();
-
         anim.SetBool("IsParried", false);
+
+        isInteracting = false;
 
         if (currentHealth > 50f)
         {
@@ -296,6 +324,7 @@ public class EnemyAI : MonoBehaviour
 
         transform.position += Vector3.down * 0.15f;
 
+        ApplyDamage(damage);
         isDead = true;
         StopAllCoroutines();
         ResetAllActionBools();
@@ -355,9 +384,20 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    private void ResetAllActionBools() { anim.SetBool("IsTopAttack", false); anim.SetBool("IsLeftAttack", false); anim.SetBool("IsRightAttack", false); anim.SetBool("IsTopHit", false); anim.SetBool("IsLeftHit", false); anim.SetBool("IsRightHit", false); anim.SetBool("IsParried", false); }
+    private void ResetAllActionBools() { 
+        anim.SetBool("IsTopAttack", false); 
+        anim.SetBool("IsLeftAttack", false); 
+        anim.SetBool("IsRightAttack", false); 
+        anim.SetBool("IsTopHit", false); 
+        anim.SetBool("IsLeftHit", false); 
+        anim.SetBool("IsRightHit", false); 
+        anim.SetBool("IsParried", false); 
+    }
 
-    private void UpdateLayerWeights() { float target = (isInteracting || currentState == AIState.Hit || isGuarding) ? 1f : 0f; anim.SetLayerWeight(actionLayerIndex, Mathf.MoveTowards(anim.GetLayerWeight(actionLayerIndex), target, Time.deltaTime * weightLerpSpeed)); }
+    private void UpdateLayerWeights() { 
+        float target = (isInteracting || currentState == AIState.Hit || isGuarding) ? 1f : 0f;
+        anim.SetLayerWeight(actionLayerIndex, Mathf.MoveTowards(anim.GetLayerWeight(actionLayerIndex), target, Time.deltaTime * weightLerpSpeed)); 
+    }
 
     private void ApplyGravity() { if (controller.isGrounded && velocity.y < 0) velocity.y = -2f; velocity.y += gravity * Time.deltaTime; controller.Move(velocity * Time.deltaTime); }
 
