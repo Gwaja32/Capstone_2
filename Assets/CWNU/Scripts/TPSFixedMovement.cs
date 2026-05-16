@@ -8,41 +8,47 @@ using static UnityEngine.EventSystems.EventTrigger;
 
 public class TPSFixedMovement : MonoBehaviour
 {
+    [Header("Character Profile")]
+    public CharacterData characterData;
+
+    private float moveSpeed;
+    private float maxHealth;
+    private float currentHealth;
+    private float maxStamina;
+    private float currentStamina;
+    private float staminaRegenRate;
+    private float attackRange;
+    private float attackDuration;
+    private float parryDuration;
+    private AnimationClip topHitClip;
+    private AnimationClip sideHitClip;
+
+    /*
     [Header("Targeting & Camera")]
     public CinemachineCamera thirdPersonCam;
     public Transform cameraHolder;
     public Transform targetObject;
+    */
 
     [Header("Aim Step Settings")]
-    public float shoulderOffset = 1.5f; // 캐릭터 키(0.8)에 맞춰 조정
+    //public float shoulderOffset = 1.5f; // 캐릭터 키(0.8)에 맞춰 조정
     public float mouseStepThreshold = 1000f;
     public float mouseDecaySpeed = 3f;
-    public float camTransitionSpeed = 15f;
+    //public float camTransitionSpeed = 15f;
 
     [Header("Combat Stance")]
     public CombatStance currentStance = CombatStance.Top;
 
     [Header("Stats Settings")]
-    public float maxHealth = 100f;
-    public float currentHealth;
-    public float maxStamina = 100f;
-    public float currentStamina;
-    public float staminaRegenRate = 20f;
     public float guardStaminaCost = 25f;
     public float minStaminaToGuard = 10f;
 
     [Header("Movement Settings")]
-    public float moveSpeed = 5f;
     public float guardSpeedMultiplier = 0.4f;
     public float gravity = -9.81f;
 
     [Header("Combat & Hit System")]
-    public float attackRange = 1.2f; // 캐릭터(0.8) + 칼(0.8) 최적화
     public LayerMask enemyLayer;
-    public AnimationClip topHitClip;
-    public AnimationClip sideHitClip;
-    public float attackDuration = 1.0f;
-    public float parryDuration = 0.8f;
     public float criticalAttackedDuration = 0.3f;
     public float parryDamage = 20f;
     public bool isHitState = false;
@@ -63,7 +69,7 @@ public class TPSFixedMovement : MonoBehaviour
     // Internal Variables
     private float mouseAccumulatorX = 0f;
     private float mouseAccumulatorY = 0f;
-    private float currentXOffset = 0f;
+    //private float currentXOffset = 0f;
     private Vector3 velocity;
     private int actionLayerIndex;
     private Dictionary<string, float> hitDurationDict = new Dictionary<string, float>();
@@ -91,6 +97,25 @@ public class TPSFixedMovement : MonoBehaviour
 
     void Start()
     {
+        if (characterData != null)
+        {
+            // 데이터 동적 로드
+            moveSpeed = characterData.moveSpeed;
+            maxHealth = characterData.maxHealth;
+            currentHealth = maxHealth;
+            maxStamina = characterData.maxStamina;
+            currentStamina = maxStamina;
+            staminaRegenRate = characterData.staminaRegenRate;
+            attackRange = characterData.attackRange;
+            attackDuration = characterData.attackDuration;
+            parryDuration = characterData.parryDuration;
+
+            if (characterData.topHitClip != null)
+                hitDurationDict["TopHit"] = characterData.topHitClip.length;
+            if (characterData.sideHitClip != null)
+                hitDurationDict["SideHit"] = characterData.sideHitClip.length;
+        }
+
         Cursor.lockState = CursorLockMode.Locked;
         currentHealth = maxHealth;
         currentStamina = maxStamina;
@@ -139,8 +164,9 @@ public class TPSFixedMovement : MonoBehaviour
 
     void LateUpdate()
     {
-        if (targetObject == null || cameraHolder == null) return;
+        //if (targetObject == null || cameraHolder == null) return;
 
+        /*
         if (!isCriticalAttacking)
         {
             Vector3 targetDir = targetObject.position - transform.position;
@@ -150,7 +176,26 @@ public class TPSFixedMovement : MonoBehaviour
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 15f);
             }
         }
+        */
 
+        if (!isCriticalAttacking)
+        {
+            // 최상위 부모(PlayerController)를 찾아가서 부모가 들고 있는 currentLockOnTarget을 참조합니다.
+            PlayerController parentController = transform.parent.GetComponent<PlayerController>();
+
+            if (parentController != null && parentController.currentLockOnTarget != null)
+            {
+                Vector3 targetDir = parentController.currentLockOnTarget.position - transform.position;
+                targetDir.y = 0;
+                if (targetDir != Vector3.zero)
+                {
+                    Quaternion targetRotation = Quaternion.LookRotation(targetDir);
+                    transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 15f);
+                }
+            }
+        }
+
+        /*
         float targetX = 0;
         if (currentStance == CombatStance.Left) targetX = shoulderOffset;
         else if (currentStance == CombatStance.Right) targetX = -shoulderOffset;
@@ -160,7 +205,14 @@ public class TPSFixedMovement : MonoBehaviour
 
         Vector3 lookPoint = transform.position + transform.forward * 50f;
         cameraHolder.LookAt(lookPoint);
+        */
     }
+
+    public float getCurrentHealth() {  return currentHealth; }
+    public float getMaxHealth() { return maxHealth; }
+    public float getCurrentStamina() { return currentStamina; }
+    public float getMaxStamina() { return maxStamina; }
+
 
     private void HandleGuardInput()
     {
@@ -441,7 +493,7 @@ public class TPSFixedMovement : MonoBehaviour
     }
     private IEnumerator GetParriedRoutine()
     {
-        UpdateCameraPositionInHit();
+        //UpdateCameraPositionInHit();
 
         isHitState = true;
         isInteracting = false;
@@ -692,7 +744,7 @@ public class TPSFixedMovement : MonoBehaviour
 
     private IEnumerator PlayerHitRoutine(string boolName, float duration)
     {
-        UpdateCameraPositionInHit();
+        //UpdateCameraPositionInHit();
 
         isHitState = true;
         isInteracting = false;
@@ -785,6 +837,7 @@ public class TPSFixedMovement : MonoBehaviour
         controller.Move(velocity * Time.deltaTime);
     }
 
+    /*
     private void UpdateCameraPositionInHit()
     {
         if (cameraHolder == null) return;
@@ -799,6 +852,7 @@ public class TPSFixedMovement : MonoBehaviour
         // 캐릭터 정면 50m 앞을 바라보게 설정
         cameraHolder.LookAt(transform.position + transform.forward * 50f);
     }
+    */
 
     void OnDisable() => actionMap.Disable();
 }

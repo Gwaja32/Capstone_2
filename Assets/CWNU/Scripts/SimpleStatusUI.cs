@@ -15,8 +15,8 @@ public class SimpleStatusUI : MonoBehaviour
         // 데이터가 연결된 놈만 업데이트
         if (playerSource != null)
         {
-            hpBar.fillAmount = playerSource.currentHealth / playerSource.maxHealth;
-            staminaBar.fillAmount = playerSource.currentStamina / playerSource.maxStamina;
+            hpBar.fillAmount = playerSource.getCurrentHealth() / playerSource.getMaxHealth();
+            staminaBar.fillAmount = playerSource.getCurrentStamina() / playerSource.getMaxStamina();
         }
         else if (enemySource != null)
         {

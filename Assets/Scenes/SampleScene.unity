@@ -1928,6 +1928,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5685504255524c24c9ec5f637514f434, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::FPSMovement
+  characterData: {fileID: 0}
   thirdPersonCam: {fileID: 293205371}
   cameraHolder: {fileID: 1050085779}
   targetObject: {fileID: 547074192}
@@ -1936,24 +1937,13 @@ MonoBehaviour:
   mouseDecaySpeed: 3
   camTransitionSpeed: 15
   currentStance: 0
-  maxHealth: 100
-  currentHealth: 100
-  maxStamina: 100
-  currentStamina: 100
-  staminaRegenRate: 15
   guardStaminaCost: 20
   minStaminaToGuard: 10
-  moveSpeed: 1
   guardSpeedMultiplier: 0.4
   gravity: -10
-  attackRange: 1.2
   enemyLayer:
     serializedVersion: 2
     m_Bits: 128
-  topHitClip: {fileID: 1827226128182048838, guid: 8c519bb408cffcf4288f1abfa5c5d7eb, type: 3}
-  sideHitClip: {fileID: 1827226128182048838, guid: 0af143ad8d6af3e46a8ad85f3aad6c47, type: 3}
-  attackDuration: 1
-  parryDuration: 0.8
   criticalAttackedDuration: 0.3
   parryDamage: 20
   isHitState: 0

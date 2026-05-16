@@ -12,7 +12,7 @@ public class LobbyManager : MonoBehaviour
     /// </summary>
     public void GameStart()
     {
-        SceneManager.LoadScene("SampleScene");
+        SceneManager.LoadScene("Select");
     }
 
     /// <summary>
