@@ -54,13 +54,6 @@ public class TPSFixedMovement : MonoBehaviour
     public bool isHitState = false;
     public bool isGuarding = false;
 
-    [Header("Foot IK Settings")]
-    public bool useFootIK = true;
-    public LayerMask groundLayer;
-    public float footOffset = 0.05f; // 캐릭터 크기에 맞춰 조정
-    public float ikWeight = 1f;
-    private float currentIKWeight = 0f;
-
     [Header("References")]
     public CharacterController controller;
     public Animator anim;
@@ -77,10 +70,17 @@ public class TPSFixedMovement : MonoBehaviour
     private InputActionMap actionMap;
     private InputAction moveAction, lookAction, guardAction, parryAction;
 
-    private bool isDead = false; 
+    private bool isDead = false;
     private bool isCriticalAttacking = false;
     private Vector3 externalForce;
-    
+
+    private Coroutine attackCoroutine;
+    private Coroutine parryCoroutine;
+    private Coroutine hitCoroutine;
+    private Coroutine criticalAttackCoroutine;
+
+    private PlayerController parentController;
+
 
     void Awake()
     {
@@ -116,6 +116,11 @@ public class TPSFixedMovement : MonoBehaviour
                 hitDurationDict["SideHit"] = characterData.sideHitClip.length;
         }
 
+        if (transform.parent != null)
+        {
+            parentController = transform.parent.GetComponent<PlayerController>();
+        }
+
         Cursor.lockState = CursorLockMode.Locked;
         currentHealth = maxHealth;
         currentStamina = maxStamina;
@@ -128,11 +133,12 @@ public class TPSFixedMovement : MonoBehaviour
             SoundManager.Instance.PlayBGM(0.2f);
     }
 
+    // 🔴 모든 핵심 로직을 안정적인 Update 타이틀로 롤백
     void Update()
     {
-        HandleStaminaRegen();
+        if (isDead) return;
 
-        // 1. 행동 가능 상태일 때만 입력 처리
+        // 1. 입력 및 상태 제어
         if (isInteracting && !isHitState)
         {
             HandleGuardInput();
@@ -143,69 +149,36 @@ public class TPSFixedMovement : MonoBehaviour
                 ExecuteAttack();
             }
 
-            if (Keyboard.current.jKey.wasPressedThisFrame) // 테스트용
-            {
-                //GetCriticalAttackedUpper();
-                //GetCriticalAttackedUnder();
-
-            }
-
             if (parryAction.triggered)
             {
-                ExecuteParry();  
+                ExecuteParry();
             }
         }
 
-        // 2. 이동 및 애니메이션 업데이트
+        // 2. 스태미나 정산 및 이동 연산 (Time.deltaTime 기반)
+        HandleStaminaRegen();
         ApplyMovement();
-        UpdateAnimationParams();
         UpdateActionLayerWeight();
+
+        // 3. 애니메이터 파라미터 동기화
+        UpdateAnimationParams();
     }
+
 
     void LateUpdate()
     {
-        //if (targetObject == null || cameraHolder == null) return;
+        if (isDead || isCriticalAttacking) return;
 
-        /*
-        if (!isCriticalAttacking)
+        if (parentController != null && parentController.currentLockOnTarget != null)
         {
-            Vector3 targetDir = targetObject.position - transform.position;
+            Vector3 targetDir = parentController.currentLockOnTarget.position - transform.position;
             targetDir.y = 0;
-            if (targetDir != Vector3.zero) {
+            if (targetDir != Vector3.zero)
+            {
                 Quaternion targetRotation = Quaternion.LookRotation(targetDir);
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 15f);
             }
         }
-        */
-
-        if (!isCriticalAttacking)
-        {
-            // 최상위 부모(PlayerController)를 찾아가서 부모가 들고 있는 currentLockOnTarget을 참조합니다.
-            PlayerController parentController = transform.parent.GetComponent<PlayerController>();
-
-            if (parentController != null && parentController.currentLockOnTarget != null)
-            {
-                Vector3 targetDir = parentController.currentLockOnTarget.position - transform.position;
-                targetDir.y = 0;
-                if (targetDir != Vector3.zero)
-                {
-                    Quaternion targetRotation = Quaternion.LookRotation(targetDir);
-                    transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 15f);
-                }
-            }
-        }
-
-        /*
-        float targetX = 0;
-        if (currentStance == CombatStance.Left) targetX = shoulderOffset;
-        else if (currentStance == CombatStance.Right) targetX = -shoulderOffset;
-
-        currentXOffset = Mathf.Lerp(currentXOffset, targetX, Time.deltaTime * camTransitionSpeed);
-        cameraHolder.localPosition = new Vector3(currentXOffset, cameraHolder.localPosition.y, cameraHolder.localPosition.z);
-
-        Vector3 lookPoint = transform.position + transform.forward * 50f;
-        cameraHolder.LookAt(lookPoint);
-        */
     }
 
     public float getCurrentHealth() {  return currentHealth; }
@@ -237,42 +210,60 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void ApplyMovement()
     {
-        if (controller == null || !controller.enabled)
-        {
-            return;
-        }
-
-        if (externalForce.magnitude > 0.1f)
-        {
-            controller.Move(externalForce * Time.deltaTime);
-        }
-
-        // 공격/패링/피격 중일 때는 중력만 적용하고 이동은 씹음
-        if (!isInteracting || isHitState)
-        {
-            ApplyGravityOnly();
-            return;
-        }
+        if (controller == null || !controller.enabled) return;
 
         bool isGrounded = controller.isGrounded;
         anim.SetBool("IsGrounded", isGrounded);
-        if (isGrounded && velocity.y < 0) velocity.y = -2f;
 
-        Vector2 moveInput = moveAction.ReadValue<Vector2>();
-        float speedMultiplier = isGuarding ? guardSpeedMultiplier : 1.0f;
+        if (isGrounded && velocity.y < 0)
+        {
+            velocity.y = -2f;
+        }
+        else
+        {
+            velocity.y += gravity * Time.deltaTime;
+        }
 
-        Vector3 move = (transform.forward * moveInput.y + transform.right * moveInput.x);
-        if (move.magnitude > 1f) move.Normalize();
+        Vector3 finalMove = Vector3.zero;
 
-        controller.Move(move * moveSpeed * speedMultiplier * Time.deltaTime);
+        // 외부 힘 (넉백 등) 처리
+        if (externalForce.magnitude > 0.1f)
+        {
+            finalMove += externalForce;
+            externalForce = Vector3.Lerp(externalForce, Vector3.zero, Time.deltaTime * 2f);
+        }
 
-        anim.SetFloat("InputX", moveInput.x, 0.1f, Time.deltaTime);
-        anim.SetFloat("InputY", moveInput.y, 0.1f, Time.deltaTime);
+        // 플레이어 이동 조작 처리
+        if (isInteracting && !isHitState)
+        {
+            Vector2 moveInput = moveAction.ReadValue<Vector2>();
+            float speedMultiplier = isGuarding ? guardSpeedMultiplier : 1.0f;
 
-        // 평상시에도 중력 적용
-        ApplyGravityOnly();
+            Vector3 move = (transform.forward * moveInput.y + transform.right * moveInput.x);
+            if (move.magnitude > 1f) move.Normalize();
 
-        currentIKWeight = Mathf.MoveTowards(currentIKWeight, isGrounded ? ikWeight : 0f, Time.deltaTime * 5f);
+            finalMove += move * moveSpeed * speedMultiplier;
+
+            anim.SetFloat("InputX", moveInput.x, 0.1f, Time.deltaTime);
+            anim.SetFloat("InputY", moveInput.y, 0.1f, Time.deltaTime);
+        }
+        else
+        {
+            anim.SetFloat("InputX", 0f, 0.1f, Time.deltaTime);
+            anim.SetFloat("InputY", 0f, 0.1f, Time.deltaTime);
+        }
+
+        // 수직 중력 합성 후 '단 한 번' 이동 적용
+        finalMove.y = velocity.y;
+        controller.Move(finalMove * Time.deltaTime);
+    }
+
+    private void UpdateActionLayerWeight()
+    {
+        if (isCriticalAttacking || isHitState || !isInteracting) return;
+
+        float currentWeight = anim.GetLayerWeight(actionLayerIndex);
+        anim.SetLayerWeight(actionLayerIndex, Mathf.MoveTowards(currentWeight, 1f, Time.deltaTime * 20f));
     }
 
     // [SOUND] 애니메이션 이벤트용 발걸음 함수
@@ -305,49 +296,50 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void ExecuteAttack()
     {
-        if (!isInteracting) return;
+        if (!isInteracting || isHitState) return;
 
         Vector3 rayStart = transform.position + Vector3.up * 0.45f - transform.forward * 0.5f;
 
         if (Physics.SphereCast(rayStart, 0.3f, transform.forward, out RaycastHit hit, attackRange, enemyLayer))
         {
             EnemyAI target = hit.collider.GetComponent<EnemyAI>();
-
             if (target != null && target.isParried)
             {
-                StartCoroutine(CriticalAttackRoutine(target));
+                if (criticalAttackCoroutine != null) StopCoroutine(criticalAttackCoroutine);
+                criticalAttackCoroutine = StartCoroutine(CriticalAttackRoutine(target));
                 return;
             }
         }
 
-        StartCoroutine(nameof(AttackRoutine));
+        if (attackCoroutine != null) StopCoroutine(attackCoroutine);
+        attackCoroutine = StartCoroutine(AttackRoutine());
     }
 
     private IEnumerator AttackRoutine()
     {
         isInteracting = false;
         isGuarding = false;
-
-        // [핵심] 다른 공격/피격 Bool이 켜져 있으면 Any State가 헷갈려하므로 싹 다 꺼줍니다.
+        anim.SetLayerWeight(actionLayerIndex, 0f);
         ResetAllActionBools();
 
-        // [SOUND] 공격 휘두르기 소리 재생
         SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.6f);
+        string boolName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
 
-        string boolName = currentStance == CombatStance.Top ? "IsTopAttack" :
-                          currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
-
-        anim.SetBool(boolName, true); // Any State가 이걸 보고 즉시 애니메이션 실행
-
+        anim.SetBool(boolName, true);
         CheckCombatHit(15f, false);
 
+        yield return null;
         yield return new WaitForSeconds(attackDuration);
 
-        anim.SetBool(boolName, false); // 애니메이션이 끝날 때쯤 꺼줌
+        anim.SetBool(boolName, false);
+        anim.SetLayerWeight(actionLayerIndex, 1f);
+
         isInteracting = true;
+        attackCoroutine = null; // 종료 시 비워줌
     }
 
     // 치명 공격 루틴
+    /*
     private IEnumerator CriticalAttackRoutine(EnemyAI targetEnemy)
     {
         isCriticalAttacking = true;
@@ -451,6 +443,107 @@ public class TPSFixedMovement : MonoBehaviour
 
         isCriticalAttacking = false;
     }
+    */
+
+    // 치명 공격 루틴
+    private IEnumerator CriticalAttackRoutine(EnemyAI targetEnemy)
+    {
+        isCriticalAttacking = true;
+        isInteracting = false;
+        isGuarding = false;
+        ResetAllActionBools();
+
+        // 0. 상대 체력에 따른 공격 종류를 제일 먼저 판별합니다.
+        bool isUpperAttack = targetEnemy.currentHealth > 50f;
+
+        // 1. 위치 및 회전 보정 세팅 (적 앞으로 빨려 들어가는 연출)
+        float elapsed = 0f;
+        float alignDuration = 0.2f;
+
+        Vector3 startPos = transform.position;
+        Quaternion startRot = transform.rotation;
+
+        Vector3 toEnemyDir = (targetEnemy.transform.position - transform.position).normalized;
+        toEnemyDir.y = 0;
+
+        Vector3 myRightDir = Vector3.Cross(Vector3.up, toEnemyDir);
+
+        float forwardOffset = 0.3f;
+        float myRightOffset = 0f;
+
+        if (isUpperAttack)
+        {
+            myRightOffset = 0f;
+        }
+        else
+        {
+            myRightOffset = -0.1f;
+        }
+
+        Vector3 targetPos = targetEnemy.transform.position
+                          - (toEnemyDir * forwardOffset)
+                          + (myRightDir * myRightOffset);
+
+        targetPos.y = transform.position.y;
+
+        Quaternion targetRot = Quaternion.LookRotation(toEnemyDir);
+
+        controller.enabled = false;
+
+        while (elapsed < alignDuration)
+        {
+            transform.position = Vector3.Lerp(startPos, targetPos, elapsed / alignDuration);
+            transform.rotation = Quaternion.Slerp(startRot, targetRot, elapsed / alignDuration);
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        transform.position = targetPos;
+        transform.rotation = targetRot;
+        controller.enabled = true;
+
+        // -------------------------------------------------------------
+        // [핵심 버그 수정] 두 레이어의 충돌을 방지하기 위해 Action Layer 가중치 제어
+        // -------------------------------------------------------------
+        float originalActionWeight = anim.GetLayerWeight(actionLayerIndex);
+        anim.SetLayerWeight(actionLayerIndex, 0f); // 상체 레이어 간섭 차단
+
+        float kickImpactTime;
+        float totalAnimDuration;
+
+        // [수정] anim.Play(layer 0, layer 1 중복)를 버리고, Base Layer에서 부드럽게 크로스페이드로 단독 재생
+        if (isUpperAttack)
+        {
+            anim.CrossFadeInFixedTime("CriticalAttackUpper", 0.1f, anim.GetLayerIndex("Base Layer"));
+            kickImpactTime = 2.25f;
+            totalAnimDuration = 4.35f;
+        }
+        else
+        {
+            anim.CrossFadeInFixedTime("CriticalAttackUnder", 0.1f, anim.GetLayerIndex("Base Layer"));
+            kickImpactTime = 2.45f;
+            totalAnimDuration = 6.17f;
+        }
+
+        targetEnemy.GetParried(kickImpactTime);
+        yield return new WaitForSeconds(kickImpactTime);
+
+        // 적에게 50 데미지 전달
+        targetEnemy.GetCriticalAttacked(50f);
+
+        // 남은 분량만큼 온전하게 대기
+        yield return new WaitForSeconds(totalAnimDuration - kickImpactTime);
+
+        // -------------------------------------------------------------
+        // [연출 종료] 애니메이션이 완벽히 끝난 후 상체 레이어 복구 및 상태 리셋
+        // -------------------------------------------------------------
+        anim.SetLayerWeight(actionLayerIndex, originalActionWeight); // 원래 가중치로 슬그머니 복구
+
+        anim.SetBool("IsCriAtckUp", false);
+        anim.SetBool("IsCriAtckUnder", false);
+        isInteracting = true;
+        isCriticalAttacking = false;
+    }
 
     private void ExecuteParry()
     {
@@ -459,6 +552,8 @@ public class TPSFixedMovement : MonoBehaviour
     }
     private IEnumerator ParryRoutine()
     {
+        float originalActionWeight = anim.GetLayerWeight(actionLayerIndex);
+        anim.SetLayerWeight(actionLayerIndex, 0f); // 상체 레이어 간섭 차단
         isInteracting = false;
         isGuarding = false;
 
@@ -472,6 +567,7 @@ public class TPSFixedMovement : MonoBehaviour
 
         anim.SetBool("IsParry", false);
         isInteracting = true;
+        anim.SetLayerWeight(actionLayerIndex, originalActionWeight);
     }
     public void GetParried()
     {
@@ -494,6 +590,8 @@ public class TPSFixedMovement : MonoBehaviour
     private IEnumerator GetParriedRoutine()
     {
         //UpdateCameraPositionInHit();
+        float originalActionWeight = anim.GetLayerWeight(actionLayerIndex);
+        anim.SetLayerWeight(actionLayerIndex, 0f); // 상체 레이어 간섭 차단
 
         isHitState = true;
         isInteracting = false;
@@ -523,6 +621,7 @@ public class TPSFixedMovement : MonoBehaviour
 
         isHitState = false;
         isInteracting = true;
+        anim.SetLayerWeight(actionLayerIndex, originalActionWeight);
     }
 
     private void GetCriticalAttackedUpper()
@@ -658,23 +757,19 @@ public class TPSFixedMovement : MonoBehaviour
     // [수정] 피격 및 가드 판정 로직
     public void TakeDamage(CombatStance attackerStance, EnemyAI attacker)
     {
-        if (isDead || isHitState) return;
+        if (isDead || isCriticalAttacking) return;
 
         // 1. 가드 성공 판정
         if (isGuarding && CanBlock(attackerStance))
         {
-            // [SOUND] 가드 성공 (Clash) 소리 재생
             SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.clashSounds, 0.8f);
+            currentStamina -= guardStaminaCost;
 
-            currentStamina -= guardStaminaCost; // 스테미나 많이 깎음
-
-            // [메리트] 나를 때린 적에게 역경직 부여
             if (attacker != null)
             {
-                attacker.StartCoroutine("RecoilRoutine", 0.8f); // 적 0.8초간 멍 때림
+                attacker.StartCoroutine("RecoilRoutine", 0.8f);
             }
 
-            // 스테미나 오링 시 가드 강제 해제
             if (currentStamina <= 0)
             {
                 currentStamina = 0;
@@ -684,13 +779,16 @@ public class TPSFixedMovement : MonoBehaviour
         }
 
         // 2. 가드 실패 시 (생짜 피격)
-        // [SOUND] 피격(Hit) 소리 재생
         SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.hitSounds, 0.9f);
 
         currentHealth -= 20f;
         if (currentHealth <= 0) { Die(); return; }
 
-        StopAllCoroutines();
+        // [핵심 고침] StopAllCoroutines()를 절대 쓰지 않고, 실행 중인 루틴만 안전하게 저격 종료
+        if (attackCoroutine != null) StopCoroutine(attackCoroutine);
+        if (parryCoroutine != null) StopCoroutine(parryCoroutine);
+        if (hitCoroutine != null) StopCoroutine(hitCoroutine);
+
         ResetAllActionBools();
         isCriticalAttacking = false;
 
@@ -699,7 +797,8 @@ public class TPSFixedMovement : MonoBehaviour
 
         duration = duration * 0.5f;
 
-        StartCoroutine(PlayerHitRoutine(hitBool, duration));
+        // 피격 코루틴을 변수에 할당하여 관리
+        hitCoroutine = StartCoroutine(PlayerHitRoutine(hitBool, duration));
     }
 
     private void Die()
@@ -722,7 +821,7 @@ public class TPSFixedMovement : MonoBehaviour
     private IEnumerator DeadSequence()
     {
         // 1. 쓰러지는 모션을 감상할 시간 (2~3초)
-        yield return new WaitForSeconds(3.0f);
+        yield return new WaitForSeconds(2.0f);
 
         // 2. 여기에 UI를 띄우는 코드를 넣으세요.
         // UIManager.Instance.ShowGameOverUI(); 
@@ -732,6 +831,10 @@ public class TPSFixedMovement : MonoBehaviour
 
         // 4. 메인 메뉴로 보내고 싶다면
         // UnityEngine.SceneManagement.SceneManager.LoadScene("MainMenuScene");
+        if (BattleManager.Instance != null)
+        {
+            BattleManager.Instance.OnPlayerDefeated();
+        }
     }
 
     private bool CanBlock(CombatStance attackerStance)
@@ -744,18 +847,22 @@ public class TPSFixedMovement : MonoBehaviour
 
     private IEnumerator PlayerHitRoutine(string boolName, float duration)
     {
-        //UpdateCameraPositionInHit();
+        float originalActionWeight = anim.GetLayerWeight(actionLayerIndex);
+        anim.SetLayerWeight(actionLayerIndex, 0f);
 
         isHitState = true;
         isInteracting = false;
         isGuarding = false;
 
-        anim.SetBool(boolName, true); // Any State가 이 Bool을 보고 즉시 피격 모션 재생
+        anim.SetBool(boolName, true);
         yield return new WaitForSeconds(duration);
 
         anim.SetBool(boolName, false);
         isHitState = false;
         isInteracting = true;
+        anim.SetLayerWeight(actionLayerIndex, originalActionWeight);
+
+        hitCoroutine = null; // 종료 시 비워줌
     }
 
     private void HandleAimStep()
@@ -792,49 +899,13 @@ public class TPSFixedMovement : MonoBehaviour
         anim.SetFloat("Stance", (float)currentStance);
     }
 
-    private void UpdateActionLayerWeight()
-    {
-        // [수정] 평상시에도 Action Layer의 애니메이션(Idle 등)이 보여야 하므로 
-        // 특수한 상황이 아니더라도 기본적으로 1을 유지하도록 변경하거나, 
-        // 하위 레이어(Base)가 보이길 원한다면 조건을 세밀하게 조정해야 합니다.
-
-        // 만약 Action Layer가 상시 노출되어야 하는 레이어라면 그냥 1f로 고정해도 됩니다.
-        float targetWeight = 1f;
-
-        // 만약 특정 상황에서만 Action Layer가 덮어씌워야 한다면 기존 로직을 유지하되,
-        // Idle이 Base Layer에 있다면 현재 상태가 정상입니다.
-        // 하지만 Idle이 Action Layer에 있다면 아래처럼 항상 1로 유지하세요.
-        anim.SetLayerWeight(actionLayerIndex, Mathf.MoveTowards(anim.GetLayerWeight(actionLayerIndex), targetWeight, Time.deltaTime * 20f));
-    }
-
-    private void OnAnimatorIK(int layerIndex)
-    {
-        if (!useFootIK || anim == null) return;
-        anim.SetIKPositionWeight(AvatarIKGoal.LeftFoot, currentIKWeight);
-        anim.SetIKRotationWeight(AvatarIKGoal.LeftFoot, currentIKWeight);
-        anim.SetIKPositionWeight(AvatarIKGoal.RightFoot, currentIKWeight);
-        anim.SetIKRotationWeight(AvatarIKGoal.RightFoot, currentIKWeight);
-        if (currentIKWeight > 0.01f) { ApplyFootIK(AvatarIKGoal.LeftFoot); ApplyFootIK(AvatarIKGoal.RightFoot); }
-    }
-
-    private void ApplyFootIK(AvatarIKGoal goal)
-    {
-        Vector3 anklePos = anim.GetIKPosition(goal);
-        if (Physics.Raycast(new Ray(anklePos + Vector3.up * 1f, Vector3.down), out RaycastHit hit, 2f, groundLayer))
-        {
-            Vector3 targetPos = hit.point; targetPos.y += footOffset;
-            if (anklePos.y > targetPos.y) targetPos.y = anklePos.y;
-            anim.SetIKPosition(goal, targetPos);
-            anim.SetIKRotation(goal, Quaternion.LookRotation(Vector3.ProjectOnPlane(transform.forward, hit.normal), hit.normal));
-        }
-    }
 
     private void ApplyGravityOnly()
     {
         if (!controller.enabled) return;
 
-        velocity.y += gravity * Time.deltaTime;
-        controller.Move(velocity * Time.deltaTime);
+        velocity.y += gravity * Time.fixedDeltaTime;
+        controller.Move(velocity * Time.fixedDeltaTime);
     }
 
     /*

@@ -6,41 +6,41 @@ public class EnemyAI : MonoBehaviour
 {
     public enum AIState { Idle, Chase, Attack, Hit, Dead }
 
+    [Header("Character Profile")]
+    public CharacterData characterData; // 플레이어와 동일한 데이터 에셋 연결
+
+    [HideInInspector] public float maxHealth;
+    [HideInInspector] public float currentHealth;
+    [HideInInspector] public float maxStamina;
+    [HideInInspector] public float currentStamina;
+    [HideInInspector] public float staminaRegenRate;
+    [HideInInspector] public float guardStaminaCost;
+    [HideInInspector] public float minStaminaToGuard;
+    [HideInInspector] public float moveSpeed;
+    [HideInInspector] public float rotationSpeed;
+    [HideInInspector] public float attackRange;
+    [HideInInspector] public AnimationClip topHitClip;
+    [HideInInspector] public AnimationClip sideHitClip;
+    [HideInInspector] public float attackDuration;
+
     [Header("State Settings")]
     public AIState currentState = AIState.Idle;
     public CombatStance currentStance = CombatStance.Top;
-
-    [Header("Stats Settings")]
-    public float maxHealth = 100f;
-    public float currentHealth;
-    public float maxStamina = 100f;
-    public float currentStamina;
-    public float staminaRegenRate = 15f;
-    public float guardStaminaCost = 20f;
-    public float minStaminaToGuard = 10f;
 
     [Header("Detection & Layer Mask")]
     public Transform playerTransform;
     public LayerMask playerLayer;
     public float chaseRange = 10f;
-    public float attackRange = 1.2f;
 
     [Header("Movement Settings")]
-    public float moveSpeed = 3f;
-    public float rotationSpeed = 10f;
     public float gravity = -9.81f;
 
     [Header("Combat Settings")]
     public float attackCooldown = 2.5f;
-    public float attackDuration = 1.0f;
     private float lastAttackTime;
     public bool isGuarding = false;
     public bool isParried = false;
     public bool isAttacking = false;
-
-    [Header("Animation Clips")]
-    public AnimationClip topHitClip;
-    public AnimationClip sideHitClip;
 
     [Header("Layer Settings")]
     public string actionLayerName = "Action Layer";
@@ -48,21 +48,65 @@ public class EnemyAI : MonoBehaviour
     public float weightLerpSpeed = 20f;
 
     [Header("References")]
-    public CharacterController controller;
-    public Animator anim;
+    public CharacterController controller; // 최상위 부모의 컨트롤러를 담을 변수
+    [HideInInspector] public Animator anim;
+    [HideInInspector] public Transform targetEnemyTransform; // Target_Enemy 자동 참조용
 
     private Dictionary<string, float> hitDurationDict = new Dictionary<string, float>();
     private Vector3 velocity;
     private bool isDead = false;
     private bool isInteracting = false;
 
+    [Header("Combat Stance Telegraphing")]
+    private CombatStance nextStance; // 선출된 다음 공격 방향
+    private bool isPreviewing = false; // 전조 Idle 대기 중인지 체크하는 플래그
+
+    void Awake()
+    {
+        if (controller == null)
+        {
+            controller = GetComponentInParent<CharacterController>();
+        }
+
+        // 🔴 추가: 스폰 순간 이전 프레임의 가속도가 남아 하늘에 고정되는 현상 방지
+        velocity = Vector3.zero;
+
+        anim = GetComponent<Animator>();
+        if (anim == null) anim = GetComponentInChildren<Animator>();
+
+        Transform rootTransform = transform.root;
+        Transform targetObj = rootTransform.FindDeepChild("Target_Enemy");
+        if (targetObj != null) targetEnemyTransform = targetObj;
+    }
+
     void Start()
     {
+        // 스탯 데이터 적용
+        if (characterData != null)
+        {
+            moveSpeed = characterData.moveSpeed;
+            maxHealth = characterData.maxHealth;
+            currentHealth = maxHealth;
+            maxStamina = characterData.maxStamina;
+            currentStamina = maxStamina;
+            staminaRegenRate = characterData.staminaRegenRate;
+            attackRange = characterData.attackRange;
+            attackDuration = characterData.attackDuration;
+
+            // 기존 고정값 보존용 
+            guardStaminaCost = 20f;
+            minStaminaToGuard = 10f;
+            rotationSpeed = 40f;
+
+            if (characterData.topHitClip != null) hitDurationDict["TopHit"] = characterData.topHitClip.length;
+            if (characterData.sideHitClip != null) hitDurationDict["SideHit"] = characterData.sideHitClip.length;
+        }
+
         currentHealth = maxHealth;
         currentStamina = maxStamina;
-        actionLayerIndex = anim.GetLayerIndex(actionLayerName);
-        if (topHitClip != null) hitDurationDict["TopHit"] = topHitClip.length;
-        if (sideHitClip != null) hitDurationDict["SideHit"] = sideHitClip.length;
+
+        if (anim != null)
+            actionLayerIndex = anim.GetLayerIndex(actionLayerName);
     }
 
     // [SOUND] 애니메이션 이벤트 수신기: 발걸음 소리
@@ -73,22 +117,58 @@ public class EnemyAI : MonoBehaviour
             SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.footstepSounds, 0.2f);
         }
     }
-
     void Update()
     {
-        if (isDead) return;
-        ApplyGravity();
+        if (isDead || anim == null) return;
+
+        // 1. 중력 및 스태미나 (항상 실행)
+        if (controller != null && controller.enabled && controller.gameObject.activeInHierarchy)
+        {
+            ApplyGravity();
+        }
         HandleStaminaRegen();
 
-        if (currentState == AIState.Hit || isInteracting) { UpdateLayerWeights(); return; }
+        // 2. 플레이어 타겟 확보 (실시간 탐색)
+        if (playerTransform == null)
+        {
+            // 🔴 수정: 최상위 플레이어 오브젝트를 먼저 찾습니다.
+            GameObject pObj = GameObject.FindWithTag("Player");
+            if (pObj != null)
+            {
+                // 🔴 핵심 교정: 플레이어 부모 아래 깊숙이 박힌 'Camera_Target'을 찾아서 조준점으로 박아버립니다.
+                Transform pTarget = pObj.transform.FindDeepChild("Camera_Target");
 
+                // 만약 Camera_Target을 못 찾으면 방어용으로 플레이어 본체를 꼽습니다.
+                playerTransform = pTarget != null ? pTarget : pObj.transform;
+            }
+        }
+
+        // 플레이어 조준점이 없으면 리턴
+        if (playerTransform == null) return;
+
+        // 🔴 핵심 교정: 피격이나 공격 상태일 때 예외 처리 순서
+        if (currentState == AIState.Hit || isInteracting)
+        {
+            UpdateLayerWeights(); // 1. 피격/공격 애니메이션 출력을 위한 가중치 연산 정상화
+            if (currentState == AIState.Hit || isAttacking) isGuarding = false;
+
+            HandleRotation(playerTransform.position); // 2. 모션 실행 중에도 플레이어는 무조건 바라봄
+
+            return; // 3. 모션 중에 이동(MoveTowardsPlayer)이 겹치지 않도록 여기서 차단
+        }
+
+        // 3. 평상시 AI 거리 계산 및 추적 시작
         float distance = Vector3.Distance(transform.position, playerTransform.position);
+
         switch (currentState)
         {
-            case AIState.Idle: if (distance <= chaseRange) currentState = AIState.Chase; break;
+            case AIState.Idle:
+                if (distance <= chaseRange) currentState = AIState.Chase;
+                break;
             case AIState.Chase:
                 HandleRotation(playerTransform.position);
                 if (distance < 3f && currentStamina > minStaminaToGuard && Random.value < 0.01f) isGuarding = true;
+
                 if (distance <= attackRange) currentState = AIState.Attack;
                 else if (distance > chaseRange) currentState = AIState.Idle;
                 else MoveTowardsPlayer();
@@ -112,10 +192,13 @@ public class EnemyAI : MonoBehaviour
         dir.y = 0; controller.Move(dir * moveSpeed * Time.deltaTime); 
     }
 
-    private void HandleRotation(Vector3 targetPos) { 
-        Vector3 dir = targetPos - transform.position; 
-        dir.y = 0; 
-        if (dir != Vector3.zero) transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), Time.deltaTime * rotationSpeed); 
+    private void HandleRotation(Vector3 targetPos)
+    {
+        // 회전은 최상위 부모(EnemyController)를 회전시켜야 모델과 물리 방향이 일치합니다.
+        Transform targetRotationRoot = transform.parent != null ? transform.parent : transform;
+        Vector3 dir = targetPos - targetRotationRoot.position;
+        dir.y = 0;
+        if (dir != Vector3.zero) targetRotationRoot.rotation = Quaternion.Slerp(targetRotationRoot.rotation, Quaternion.LookRotation(dir), Time.deltaTime * rotationSpeed);
     }
 
     private void HandleAttackPattern() { 
@@ -316,11 +399,7 @@ public class EnemyAI : MonoBehaviour
         }
 
         anim.speed = 0f;
-
-        if (controller != null)
-        {
-            controller.enabled = false;
-        }
+        if (controller != null) controller.enabled = false;
 
         transform.position += Vector3.down * 0.15f;
 
@@ -332,9 +411,14 @@ public class EnemyAI : MonoBehaviour
         controller.enabled = false;
 
         if (SoundManager.Instance != null)
-        {
             SoundManager.Instance.PlaySingleSFX(SoundManager.Instance.victorySound, 1.0f);
-        }
+
+        // 🔴 [추가] 마우스 커서를 화면에 강제로 다시 보여주고, 잠금을 해제합니다.
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+
+        // 사망 시 BattleManager에게 알림 (다음 스테이지 트리거용)
+        if (BattleManager.Instance != null) BattleManager.Instance.OnEnemyDefeated();
     }
 
     private void ApplyDamage(float damage)
@@ -361,11 +445,37 @@ public class EnemyAI : MonoBehaviour
         anim.SetBool("IsGuarding", false);
         anim.SetFloat("InputY", 0);
 
+        // 1. 피격 애니메이션 시작
         anim.SetBool(b, true);
 
-        yield return new WaitForSeconds(d);
+        // 🔴 교정: 맞아서 경직이 들어간 시간(d) 동안은 회전하지 않고 제자리에서 피격 모션만 온전히 재생합니다.
+        float elapsed = 0f;
+        while (elapsed < d)
+        {
+            elapsed += Time.deltaTime;
+            UpdateLayerWeights();
+            yield return null;
+        }
 
+        // 2. 피격 애니메이션 종료
         anim.SetBool(b, false);
+
+        // 🔴 핵심 추가: 피격 경직이 끝난 직후, 다음 상태(공격/추적)로 넘어가기 전에 
+        // 플레이어 방향으로 고개를 아주 빠르게 휙 돌려줍니다.
+        if (playerTransform != null && !isDead)
+        {
+            Transform targetRotationRoot = transform.parent != null ? transform.parent : transform;
+            Vector3 dir = playerTransform.position - targetRotationRoot.position;
+            dir.y = 0; // 상하 꺾임 방지
+
+            if (dir != Vector3.zero)
+            {
+                // Quaternion.LookRotation으로 프레임 지연 없이 즉시 정면 각도를 계산해서 꼽아버립니다.
+                targetRotationRoot.rotation = Quaternion.LookRotation(dir);
+            }
+        }
+
+        // 3. 시선 동기화가 완벽히 끝난 상태에서 안전하게 추적/공격 상태로 복귀
         if (!isDead) currentState = AIState.Chase;
     }
 
@@ -379,9 +489,13 @@ public class EnemyAI : MonoBehaviour
         controller.enabled = false;
 
         if (SoundManager.Instance != null)
-        {
             SoundManager.Instance.PlaySingleSFX(SoundManager.Instance.victorySound, 1.0f);
-        }
+
+        // 🔴 [핵심 추가] 일반 사망 시에도 마우스 커서 완전 해제
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+
+        if (BattleManager.Instance != null) BattleManager.Instance.OnEnemyDefeated();
     }
 
     private void ResetAllActionBools() { 
@@ -394,12 +508,35 @@ public class EnemyAI : MonoBehaviour
         anim.SetBool("IsParried", false); 
     }
 
-    private void UpdateLayerWeights() { 
-        float target = (isInteracting || currentState == AIState.Hit || isGuarding) ? 1f : 0f;
-        anim.SetLayerWeight(actionLayerIndex, Mathf.MoveTowards(anim.GetLayerWeight(actionLayerIndex), target, Time.deltaTime * weightLerpSpeed)); 
+    // 🔴 [수정 완료] 가드 중이거나, 공격·피격을 하지 않는 평상시 상태일 때 가중치를 1로 복구
+    private void UpdateLayerWeights()
+    {
+        if (isDead || anim == null) return;
+        float target = 0f;
+        if (isGuarding || (!isAttacking && currentState != AIState.Hit && currentState != AIState.Dead))
+        {
+            target = 1f;
+        }
+        float currentWeight = anim.GetLayerWeight(actionLayerIndex);
+        anim.SetLayerWeight(actionLayerIndex, Mathf.MoveTowards(currentWeight, target, Time.deltaTime * weightLerpSpeed));
     }
 
-    private void ApplyGravity() { if (controller.isGrounded && velocity.y < 0) velocity.y = -2f; velocity.y += gravity * Time.deltaTime; controller.Move(velocity * Time.deltaTime); }
+    private void ApplyGravity()
+    {
+        if (controller == null) return;
+
+        // 🔴 수정: 바닥 체크 조건과 무관하게 공중일 때 중력이 누적되도록 분리
+        if (controller.isGrounded)
+        {
+            if (velocity.y < 0) velocity.y = -2f; // 접지 유지
+        }
+        else
+        {
+            velocity.y += gravity * Time.deltaTime; // 낙하 속도 누적
+        }
+
+        controller.Move(velocity * Time.deltaTime);
+    }
 
     private void UpdateAnimationParams() { anim.SetFloat("InputY", (currentState == AIState.Chase) ? 1f : 0f, 0.1f, Time.deltaTime); anim.SetFloat("Stance", (float)currentStance); anim.SetBool("IsGuarding", isGuarding); }
 
@@ -417,5 +554,20 @@ public class EnemyAI : MonoBehaviour
 
         isInteracting = false;
         currentState = AIState.Chase;
+    }
+}
+
+// 자식 계층 구조 깊은 탐색을 위한 확장 메서드 서포트 클래스
+public static class TransformExtensions
+{
+    public static Transform FindDeepChild(this Transform parent, string name)
+    {
+        foreach (Transform child in parent)
+        {
+            if (child.name == name) return child;
+            Transform result = child.FindDeepChild(name);
+            if (result != null) return result;
+        }
+        return null;
     }
 }

@@ -7,7 +7,7 @@ public class PlayerController : MonoBehaviour
     public CinemachineCamera thirdPersonCam;
     public Transform cameraHolder;
 
-    // 중앙에서 관리하는 락온 타겟
+    // 중앙에서 관리하는 락온 타겟 (이제 외부에서 갱신해줍니다)
     public Transform currentLockOnTarget;
 
     [Header("Shoulder Camera Settings")]
@@ -41,11 +41,8 @@ public class PlayerController : MonoBehaviour
                 if (character.controller == null) character.controller = character.GetComponent<CharacterController>();
                 if (character.anim == null) character.anim = character.GetComponent<Animator>();
 
-                EnemyAI targetEnemy = FindFirstObjectByType<EnemyAI>();
-                if (targetEnemy != null)
-                {
-                    currentLockOnTarget = targetEnemy.transform;
-                }
+                // 🔴 [삭제] 기존의 무조건 첫 적을 찾던 로직은 지웁니다. 
+                // 대신 BattleManager가 적을 켤 때 이 플레이어에게 타겟을 지정해줄 것입니다.
 
                 if (thirdPersonCam != null && cameraHolder != null)
                 {
@@ -66,17 +63,55 @@ public class PlayerController : MonoBehaviour
         }
     }
 
-    void Update()
+    // 🔴 [추가] BattleManager가 새로운 적을 내보낼 때 호출해줄 타겟 갱신 함수
+    public void SetLockOnTarget(Transform newTarget)
+    {
+        currentLockOnTarget = newTarget;
+
+        if (currentLockOnTarget != null)
+        {
+            Debug.Log($"🎯 플레이어 카메라 타겟 변경 완료: {currentLockOnTarget.parent.name}의 {currentLockOnTarget.name}");
+        }
+        else
+        {
+            Debug.Log("🎯 락온 타겟 해제");
+        }
+    }
+
+    void LateUpdate()
     {
         if (activeCharacter == null) return;
 
-        // 1. [위치 동기화] 부모 위치를 자식 캐릭터 위치로 밀착 (CCTV 버그 방지)
+        // 1. [위치 동기화] 캐릭터의 위치만 그대로 따라갑니다.
         transform.position = activeCharacter.transform.position;
 
-        // 2. [★ 회전 버그 해결의 핵심] 
-        // 자식 캐릭터는 LateUpdate에서 적을 보며 회전하므로, 
-        // 부모도 자식 캐릭터의 회전 값을 그대로 실시간 복사해야 카메라가 캐릭터 등 뒤를 따라 같이 회전합니다.
-        transform.rotation = activeCharacter.transform.rotation;
+        // 🔴 [핵심 교정] 2. 애니메이션 회전 노이즈 제거
+        // 만약 락온 타겟(적)이 있다면, 애니메이션 뼈대 흔들림 무시하고 오직 '적'만 똑바로 바라보게 만듭니다.
+        if (currentLockOnTarget != null)
+        {
+            Vector3 dir = currentLockOnTarget.position - transform.position;
+            dir.y = 0; // 상하 꺾임 방지
+            if (dir != Vector3.zero)
+            {
+                transform.rotation = Quaternion.LookRotation(dir);
+            }
+        }
+        else
+        {
+            // 락온 타겟이 없을 때는 모델링의 'Y축(수평) 정면' 대세 회전만 가져오고, 
+            // 애니메이션 좌우 트위스트 잔떨림은 Quaternion.Euler로 필터링합니다.
+            Vector3 forward = activeCharacter.transform.forward;
+            forward.y = 0;
+            if (forward != Vector3.zero)
+            {
+                transform.rotation = Quaternion.LookRotation(forward);
+            }
+        }
+    }
+
+    void Update()
+    {
+        if (activeCharacter == null) return;
 
         // 3. 자식 캐릭터의 전투 스탠스를 감시해서 목표 X 좌표 설정
         float targetX = 0f;
@@ -89,8 +124,10 @@ public class PlayerController : MonoBehaviour
         currentXOffset = Mathf.Lerp(currentXOffset, targetX, Time.deltaTime * camTransitionSpeed);
         cameraHolder.localPosition = new Vector3(currentXOffset, cameraHolder.localPosition.y, cameraHolder.localPosition.z);
 
-        // 5. [수정] 굳어있던 정면 벡터가 아니라, 자식을 따라 회전한 부모의 정면 50m 앞을 바라보게 만듭니다.
-        Vector3 lookPoint = transform.position + transform.forward * 50f;
-        cameraHolder.LookAt(lookPoint);
+        // 5. 카메라 홀더의 자체 회전은 부모(본체) 정면과 깔끔하게 일치시킵니다.
+        if (transform.forward != Vector3.zero)
+        {
+            cameraHolder.rotation = Quaternion.LookRotation(transform.forward);
+        }
     }
 }
