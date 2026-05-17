@@ -1,5 +1,6 @@
-using UnityEngine;
+using Unity.AppUI.Core;
 using Unity.Cinemachine;
+using UnityEngine;
 
 public class PlayerController : MonoBehaviour
 {
@@ -89,18 +90,28 @@ public class PlayerController : MonoBehaviour
         // 만약 락온 타겟(적)이 있다면, 애니메이션 뼈대 흔들림 무시하고 오직 '적'만 똑바로 바라보게 만듭니다.
         if (currentLockOnTarget != null)
         {
-            Vector3 dir = currentLockOnTarget.position - transform.position;
-            dir.y = 0; // 상하 꺾임 방지
-            if (dir != Vector3.zero)
+            EnemyAI enemyComp = currentLockOnTarget.GetComponentInParent<EnemyAI>();
+            if (enemyComp != null && enemyComp.currentHealth <= 0)
             {
-                transform.rotation = Quaternion.LookRotation(dir);
+                currentLockOnTarget = null;
+                return;
+            }
+
+            Vector3 dir = currentLockOnTarget.position - transform.position;
+            if (dir.sqrMagnitude > 0.09f)
+            {
+                dir.y = 0; // 상하 꺾임 방지
+                if (dir != Vector3.zero)
+                {
+                    transform.rotation = Quaternion.LookRotation(dir);
+                }
             }
         }
         else
         {
             // 락온 타겟이 없을 때는 모델링의 'Y축(수평) 정면' 대세 회전만 가져오고, 
             // 애니메이션 좌우 트위스트 잔떨림은 Quaternion.Euler로 필터링합니다.
-            Vector3 forward = activeCharacter.transform.forward;
+            Vector3 forward = transform.forward;
             forward.y = 0;
             if (forward != Vector3.zero)
             {

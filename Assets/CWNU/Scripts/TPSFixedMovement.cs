@@ -168,15 +168,26 @@ public class TPSFixedMovement : MonoBehaviour
     void LateUpdate()
     {
         if (isDead || isCriticalAttacking) return;
-
+        PlayerController parentController = transform.parent.GetComponent<PlayerController>();
         if (parentController != null && parentController.currentLockOnTarget != null)
         {
-            Vector3 targetDir = parentController.currentLockOnTarget.position - transform.position;
-            targetDir.y = 0;
-            if (targetDir != Vector3.zero)
+            EnemyAI enemyComp = parentController.currentLockOnTarget.GetComponent<EnemyAI>();
+            if (enemyComp != null && enemyComp.currentHealth <= 0)
             {
-                Quaternion targetRotation = Quaternion.LookRotation(targetDir);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 15f);
+                parentController.currentLockOnTarget = null; // 타겟 해제
+                return; // 회전 연산 패스
+            }
+
+            Vector3 targetDir = parentController.currentLockOnTarget.position - transform.position;
+
+            if (targetDir.sqrMagnitude > 0.09f) 
+            {
+                targetDir.y = 0;
+                if (targetDir != Vector3.zero)
+                {
+                    Quaternion targetRotation = Quaternion.LookRotation(targetDir);
+                    transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * 15f);
+                }
             }
         }
     }
@@ -530,6 +541,12 @@ public class TPSFixedMovement : MonoBehaviour
 
         // 적에게 50 데미지 전달
         targetEnemy.GetCriticalAttacked(50f);
+
+        PlayerController parentController = transform.parent.GetComponent<PlayerController>();
+        if (parentController != null && targetEnemy.currentHealth <= 0) // EnemyAI에 체력 변수가 있다고 가정
+        {
+            parentController.currentLockOnTarget = null; // 타겟을 비워버림
+        }
 
         // 남은 분량만큼 온전하게 대기
         yield return new WaitForSeconds(totalAnimDuration - kickImpactTime);
