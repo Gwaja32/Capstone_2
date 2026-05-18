@@ -17,7 +17,7 @@ MonoBehaviour:
   maxStamina: 100
   staminaRegenRate: 20
   moveSpeed: 1
-  attackRange: 0.8
+  attackRange: 1
   attackDuration: 1
   parryDuration: 1
   topHitClip: {fileID: 1827226128182048838, guid: 8c519bb408cffcf4288f1abfa5c5d7eb, type: 3}

@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 7d106d9a3b2fd064b8d89ef6885493da
+timeCreated: 1533043069
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 124272
+  packageName: Barrels and Crates PBR
+  packageVersion: 1.0
+  assetPath: Assets/GamerSquid/Assets/Materials/Weapons Crate/BottomWood.mat
+  uploadId: 261484

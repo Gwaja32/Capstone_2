@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: c92699289de417542848d7ba2f51738b
+timeCreated: 1533043069
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 124272
+  packageName: Barrels and Crates PBR
+  packageVersion: 1.0
+  assetPath: Assets/GamerSquid/Assets/Materials/Weapons Crate/TopWood.mat
+  uploadId: 261484

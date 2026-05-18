@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: e873eec06ec7e8246a8c2b096f984fac
+timeCreated: 1534423192
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 124272
+  packageName: Barrels and Crates PBR
+  packageVersion: 1.0
+  assetPath: Assets/GamerSquid/Assets/Prefabs/Crate (Box-RopeHandles)/Crate (Box-RopeHandles-Light).prefab
+  uploadId: 261484

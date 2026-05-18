@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 28ee03436d2845e4f91f195f694b354e
+timeCreated: 1532788611
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 124272
+  packageName: Barrels and Crates PBR
+  packageVersion: 1.0
+  assetPath: Assets/GamerSquid/Assets/Materials/Oil Barrel/Barrel-ShinyMetal.mat
+  uploadId: 261484

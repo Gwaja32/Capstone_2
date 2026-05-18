@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: ba595e70b67913b4998f1751cb762259
+timeCreated: 1532788611
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 124272
+  packageName: Barrels and Crates PBR
+  packageVersion: 1.0
+  assetPath: Assets/GamerSquid/Assets/Materials/Oil Barrel/LidShiny.mat
+  uploadId: 261484

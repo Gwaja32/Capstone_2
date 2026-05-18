@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: 3d189be896c77bd459b2becc4c9e1d33
+timeCreated: 1533043069
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 124272
+  packageName: Barrels and Crates PBR
+  packageVersion: 1.0
+  assetPath: Assets/GamerSquid/Assets/Materials/Weapons Crate/BackWood.mat
+  uploadId: 261484

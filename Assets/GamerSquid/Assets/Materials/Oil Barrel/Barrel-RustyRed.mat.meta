@@ -1,0 +1,15 @@
+fileFormatVersion: 2
+guid: fb3e0c3f426f0494fb204091ca502031
+timeCreated: 1532788611
+licenseType: Store
+NativeFormatImporter:
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 
+AssetOrigin:
+  serializedVersion: 1
+  productId: 124272
+  packageName: Barrels and Crates PBR
+  packageVersion: 1.0
+  assetPath: Assets/GamerSquid/Assets/Materials/Oil Barrel/Barrel-RustyRed.mat
+  uploadId: 261484
