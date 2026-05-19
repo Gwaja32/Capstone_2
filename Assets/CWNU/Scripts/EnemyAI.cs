@@ -352,6 +352,9 @@ public class EnemyAI : MonoBehaviour
         float elapsed = 0f;
         float duration = 3.1f;
 
+        bool isDamageApplied = false;
+        float damageTiming = 0.38f;
+
         while (elapsed < duration)
         {
             pushForce = Vector3.Lerp(pushForce, Vector3.zero, Time.deltaTime * 2f);
@@ -359,11 +362,15 @@ public class EnemyAI : MonoBehaviour
             {
                 controller.Move(pushForce * Time.deltaTime);
             }
+            if (!isDamageApplied && elapsed >= damageTiming)
+            {
+                ApplyDamage(damage);
+                isDamageApplied = true; // 중복 실행 방지
+            }
+
             elapsed += Time.deltaTime;
             yield return null;
         }
-
-        ApplyDamage(damage);
     }
 
     private IEnumerator GetCriticalAttackedUnderRoutine(float damage)
@@ -413,11 +420,9 @@ public class EnemyAI : MonoBehaviour
         if (SoundManager.Instance != null)
             SoundManager.Instance.PlaySingleSFX(SoundManager.Instance.victorySound, 1.0f);
 
-        // 🔴 [추가] 마우스 커서를 화면에 강제로 다시 보여주고, 잠금을 해제합니다.
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
 
-        // 사망 시 BattleManager에게 알림 (다음 스테이지 트리거용)
         if (BattleManager.Instance != null) BattleManager.Instance.OnEnemyDefeated();
     }
 
