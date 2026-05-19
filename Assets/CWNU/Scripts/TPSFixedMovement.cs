@@ -23,13 +23,6 @@ public class TPSFixedMovement : MonoBehaviour
     private AnimationClip topHitClip;
     private AnimationClip sideHitClip;
 
-    /*
-    [Header("Targeting & Camera")]
-    public CinemachineCamera thirdPersonCam;
-    public Transform cameraHolder;
-    public Transform targetObject;
-    */
-
     [Header("Aim Step Settings")]
     //public float shoulderOffset = 1.5f; // 캐릭터 키(0.8)에 맞춰 조정
     public float mouseStepThreshold = 1000f;
@@ -288,7 +281,7 @@ public class TPSFixedMovement : MonoBehaviour
         }
     }
 
-    // [중요] 모든 애니메이션 파라미터를 깨끗하게 밀어버리는 함수
+    // 모든 애니메이션 파라미터를 깨끗하게 밀어버리는 함수
     private void ResetAllActionBools()
     {
         anim.SetBool("IsTopAttack", false);
@@ -350,113 +343,6 @@ public class TPSFixedMovement : MonoBehaviour
     }
 
     // 치명 공격 루틴
-    /*
-    private IEnumerator CriticalAttackRoutine(EnemyAI targetEnemy)
-    {
-        isCriticalAttacking = true;
-
-        isInteracting = false;
-        isGuarding = false;
-        ResetAllActionBools();
-
-        // 0. 상대 체력에 따른 공격 종류를 제일 먼저 판별합니다.
-        bool isUpperAttack = targetEnemy.currentHealth > 50f;
-
-        // 1. 위치 및 회전 보정 세팅 (적 앞으로 빨려 들어가는 연출)
-        float elapsed = 0f;
-        float alignDuration = 0.2f; // 보정에 걸리는 시간 (짧을수록 확 빨려들어감)
-
-        Vector3 startPos = transform.position;
-        Quaternion startRot = transform.rotation;
-
-        Vector3 toEnemyDir = (targetEnemy.transform.position - transform.position).normalized;
-        toEnemyDir.y = 0; // 평면 기준
-
-        // 내가 적을 바라볼 때의 '오른쪽' 방향
-        Vector3 myRightDir = Vector3.Cross(Vector3.up, toEnemyDir);
-
-        float forwardOffset = 0.3f; // 적과 유지할 앞뒤 거리
-        float myRightOffset = 0f;   // '내 기준' 좌우 이동량 (음수 = 내 왼쪽, 양수 = 내 오른쪽)
-
-        if (isUpperAttack)
-        {
-            // Upper: 칼끝을 맞추기 위해 내 몸을 왼쪽으로 살짝 이동
-            myRightOffset = 0f;
-        }
-        else
-        {
-            // Under: 모션에 맞게 수치 조절 (필요시 변경하세요)
-            myRightOffset = -0.1f;
-        }
-
-        // 목표 위치: 적의 위치 
-        // - (적에서 나를 향해 forwardOffset 만큼 떨어짐) 
-        // + (내 오른쪽 방향 벡터 * myRightOffset 만큼 이동)
-        Vector3 targetPos = targetEnemy.transform.position
-                          - (toEnemyDir * forwardOffset)
-                          + (myRightDir * myRightOffset);
-
-        targetPos.y = transform.position.y;
-
-        // 목표 회전: 적을 마주보기
-        Quaternion targetRot = Quaternion.LookRotation(toEnemyDir);
-
-        // 이동 중 물리 충돌로 덜덜거리는 것을 방지하기 위해 잠시 컨트롤러 끔
-        controller.enabled = false;
-
-        // 2. 부드럽게 위치/회전 보정
-        while (elapsed < alignDuration)
-        {
-            transform.position = Vector3.Lerp(startPos, targetPos, elapsed / alignDuration);
-            transform.rotation = Quaternion.Slerp(startRot, targetRot, elapsed / alignDuration);
-            elapsed += Time.deltaTime;
-            yield return null;
-        }
-
-        // 오차 방지를 위해 최종 스냅 후 컨트롤러 원상복구
-        transform.position = targetPos;
-        transform.rotation = targetRot;
-        controller.enabled = true;
-
-        // 3. 애니메이션 실행
-        float kickImpactTime; //발차기까지 걸리는 시간
-        float totalAnimDuration; //전체 모션 시간
-
-        // 애니메이션 실행
-        if (isUpperAttack) {
-            anim.Play("CriticalAttackUpper", 0, 0f); 
-            anim.Play("CriticalAttackUpper", 1, 0f);
-
-            kickImpactTime = 2.25f;     
-            totalAnimDuration = 4.35f;
-        }
-        else
-        {
-            anim.Play("CriticalAttackUnder", 0, 0f);
-            anim.Play("CriticalAttackUnder", 1, 0f); 
-            
-            kickImpactTime = 2.45f;    
-            totalAnimDuration = 6.17f;
-        }
-
-        targetEnemy.GetParried(kickImpactTime);
-        yield return new WaitForSeconds(kickImpactTime);
-
-        // 적에게 50 데미지 전달
-        targetEnemy.GetCriticalAttacked(50f);
-
-        // 박제해둔 변수를 기준으로 대기 시간 설정 (꼬임 방지)
-        yield return new WaitForSeconds(totalAnimDuration - kickImpactTime);
-
-        anim.SetBool("IsCriAtckUp", false);
-        anim.SetBool("IsCriAtckUnder", false);
-        isInteracting = true;
-
-        isCriticalAttacking = false;
-    }
-    */
-
-    // 치명 공격 루틴
     private IEnumerator CriticalAttackRoutine(EnemyAI targetEnemy)
     {
         isCriticalAttacking = true;
@@ -513,9 +399,6 @@ public class TPSFixedMovement : MonoBehaviour
         transform.rotation = targetRot;
         controller.enabled = true;
 
-        // -------------------------------------------------------------
-        // [핵심 버그 수정] 두 레이어의 충돌을 방지하기 위해 Action Layer 가중치 제어
-        // -------------------------------------------------------------
         float originalActionWeight = anim.GetLayerWeight(actionLayerIndex);
         anim.SetLayerWeight(actionLayerIndex, 0f); // 상체 레이어 간섭 차단
 
@@ -543,18 +426,14 @@ public class TPSFixedMovement : MonoBehaviour
         targetEnemy.GetCriticalAttacked(50f);
 
         PlayerController parentController = transform.parent.GetComponent<PlayerController>();
-        if (parentController != null && targetEnemy.currentHealth <= 0) // EnemyAI에 체력 변수가 있다고 가정
+        if (parentController != null && targetEnemy.currentHealth <= 0) 
         {
-            parentController.currentLockOnTarget = null; // 타겟을 비워버림
+            parentController.currentLockOnTarget = null; 
         }
 
-        // 남은 분량만큼 온전하게 대기
         yield return new WaitForSeconds(totalAnimDuration - kickImpactTime);
 
-        // -------------------------------------------------------------
-        // [연출 종료] 애니메이션이 완벽히 끝난 후 상체 레이어 복구 및 상태 리셋
-        // -------------------------------------------------------------
-        anim.SetLayerWeight(actionLayerIndex, originalActionWeight); // 원래 가중치로 슬그머니 복구
+        anim.SetLayerWeight(actionLayerIndex, originalActionWeight); 
 
         anim.SetBool("IsCriAtckUp", false);
         anim.SetBool("IsCriAtckUnder", false);

@@ -57,9 +57,10 @@ public class EnemyAI : MonoBehaviour
     private bool isDead = false;
     private bool isInteracting = false;
 
-    [Header("Combat Stance Telegraphing")]
-    private CombatStance nextStance; // 선출된 다음 공격 방향
-    private bool isPreviewing = false; // 전조 Idle 대기 중인지 체크하는 플래그
+    //안쓰는거 같아서 임시 주석 처리 (안쓸거 같으면 지우죠)
+    //[Header("Combat Stance Telegraphing")]
+    //private CombatStance nextStance; // 선출된 다음 공격 방향
+    //private bool isPreviewing = false; // 전조 Idle 대기 중인지 체크하는 플래그
 
     void Awake()
     {
@@ -68,7 +69,7 @@ public class EnemyAI : MonoBehaviour
             controller = GetComponentInParent<CharacterController>();
         }
 
-        // 🔴 추가: 스폰 순간 이전 프레임의 가속도가 남아 하늘에 고정되는 현상 방지
+        // 스폰 순간 이전 프레임의 가속도가 남아 하늘에 고정되는 현상 방지
         velocity = Vector3.zero;
 
         anim = GetComponent<Animator>();
@@ -131,11 +132,11 @@ public class EnemyAI : MonoBehaviour
         // 2. 플레이어 타겟 확보 (실시간 탐색)
         if (playerTransform == null)
         {
-            // 🔴 수정: 최상위 플레이어 오브젝트를 먼저 찾습니다.
+            // 최상위 플레이어 오브젝트를 먼저 찾습니다.
             GameObject pObj = GameObject.FindWithTag("Player");
             if (pObj != null)
             {
-                // 🔴 핵심 교정: 플레이어 부모 아래 깊숙이 박힌 'Camera_Target'을 찾아서 조준점으로 박아버립니다.
+                // 플레이어 부모 아래 깊숙이 박힌 'Camera_Target'을 찾아서 조준점으로 박아버립니다.
                 Transform pTarget = pObj.transform.FindDeepChild("Camera_Target");
 
                 // 만약 Camera_Target을 못 찾으면 방어용으로 플레이어 본체를 꼽습니다.
@@ -146,7 +147,7 @@ public class EnemyAI : MonoBehaviour
         // 플레이어 조준점이 없으면 리턴
         if (playerTransform == null) return;
 
-        // 🔴 핵심 교정: 피격이나 공격 상태일 때 예외 처리 순서
+        // 피격이나 공격 상태일 때 예외 처리 순서
         if (currentState == AIState.Hit || isInteracting)
         {
             UpdateLayerWeights(); // 1. 피격/공격 애니메이션 출력을 위한 가중치 연산 정상화
