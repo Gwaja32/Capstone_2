@@ -173,7 +173,7 @@ public class TPSFixedMovement : MonoBehaviour
 
             Vector3 targetDir = parentController.currentLockOnTarget.position - transform.position;
 
-            if (targetDir.sqrMagnitude > 0.09f) 
+            if (targetDir.sqrMagnitude > 0.09f)
             {
                 targetDir.y = 0;
                 if (targetDir != Vector3.zero)
@@ -185,7 +185,7 @@ public class TPSFixedMovement : MonoBehaviour
         }
     }
 
-    public float getCurrentHealth() {  return currentHealth; }
+    public float getCurrentHealth() { return currentHealth; }
     public float getMaxHealth() { return maxHealth; }
     public float getCurrentStamina() { return currentStamina; }
     public float getMaxStamina() { return maxStamina; }
@@ -291,7 +291,7 @@ public class TPSFixedMovement : MonoBehaviour
         anim.SetBool("IsParried", false);
         anim.SetBool("IsTopHit", false);
         anim.SetBool("IsLeftHit", false);
-        anim.SetBool("IsRightHit", false); 
+        anim.SetBool("IsRightHit", false);
         anim.SetBool("IsCriAtckedUp", false);
         anim.SetBool("IsCriAtckedUnder", false);
         anim.SetBool("IsCriAtckUp", false);
@@ -300,7 +300,7 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void ExecuteAttack()
     {
-        if (!isInteracting || isHitState) return;
+        if (!isInteracting || isHitState || attackCoroutine != null || parryCoroutine != null) return;
 
         Vector3 rayStart = transform.position + Vector3.up * 0.45f - transform.forward * 0.5f;
 
@@ -315,7 +315,6 @@ public class TPSFixedMovement : MonoBehaviour
             }
         }
 
-        if (attackCoroutine != null) StopCoroutine(attackCoroutine);
         attackCoroutine = StartCoroutine(AttackRoutine());
     }
 
@@ -426,14 +425,14 @@ public class TPSFixedMovement : MonoBehaviour
         targetEnemy.GetCriticalAttacked(50f);
 
         PlayerController parentController = transform.parent.GetComponent<PlayerController>();
-        if (parentController != null && targetEnemy.currentHealth <= 0) 
+        if (parentController != null && targetEnemy.currentHealth <= 0)
         {
-            parentController.currentLockOnTarget = null; 
+            parentController.currentLockOnTarget = null;
         }
 
         yield return new WaitForSeconds(totalAnimDuration - kickImpactTime);
 
-        anim.SetLayerWeight(actionLayerIndex, originalActionWeight); 
+        anim.SetLayerWeight(actionLayerIndex, originalActionWeight);
 
         anim.SetBool("IsCriAtckUp", false);
         anim.SetBool("IsCriAtckUnder", false);
@@ -443,8 +442,9 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void ExecuteParry()
     {
-        if (!isInteracting) return;
-        StartCoroutine(nameof(ParryRoutine));
+        if (!isInteracting || isHitState || parryCoroutine != null || attackCoroutine != null) return;
+        isInteracting = false;
+        parryCoroutine = StartCoroutine(ParryRoutine());
     }
     private IEnumerator ParryRoutine()
     {
@@ -464,6 +464,14 @@ public class TPSFixedMovement : MonoBehaviour
         anim.SetBool("IsParry", false);
         isInteracting = true;
         anim.SetLayerWeight(actionLayerIndex, originalActionWeight);
+
+        if (guardAction.IsPressed() && currentStamina >= minStaminaToGuard)
+        {
+            isGuarding = true;
+        }
+
+        parryCoroutine = null;
+        isInteracting = true;
     }
     public void GetParried()
     {
@@ -530,7 +538,7 @@ public class TPSFixedMovement : MonoBehaviour
 
     private IEnumerator GetCriticalAttackedUpperRoutine()
     {
-        isHitState = true; 
+        isHitState = true;
         isInteracting = false;
         isGuarding = false;
         ResetAllActionBools();
@@ -563,7 +571,7 @@ public class TPSFixedMovement : MonoBehaviour
         externalForce = Vector3.zero;
         isInteracting = true;
     }
-    
+
     private void GetCriticalAttackedUnder()
     {
         // 이미 다른 행동 중이라면 무시
@@ -680,13 +688,28 @@ public class TPSFixedMovement : MonoBehaviour
         currentHealth -= 20f;
         if (currentHealth <= 0) { Die(); return; }
 
-        // [핵심 고침] StopAllCoroutines()를 절대 쓰지 않고, 실행 중인 루틴만 안전하게 저격 종료
-        if (attackCoroutine != null) StopCoroutine(attackCoroutine);
-        if (parryCoroutine != null) StopCoroutine(parryCoroutine);
-        if (hitCoroutine != null) StopCoroutine(hitCoroutine);
+        // TakeDamage 함수 내부 수정 제안
+        if (attackCoroutine != null)
+        {
+            StopCoroutine(attackCoroutine);
+            attackCoroutine = null; // 강제 종료 후 반드시 null 처리
+        }
+        if (parryCoroutine != null)
+        {
+            StopCoroutine(parryCoroutine);
+            parryCoroutine = null;  // 강제 종료 후 반드시 null 처리
+        }
+        if (hitCoroutine != null)
+        {
+            StopCoroutine(hitCoroutine);
+            hitCoroutine = null; // 확실하게 밀어주기
+        }
 
         ResetAllActionBools();
         isCriticalAttacking = false;
+
+        // 맞았으니까 이전 행동의 잠금은 풀고 피격 상태로 넘어가야 합니다.
+        isInteracting = true;
 
         string hitBool = (attackerStance == CombatStance.Top) ? "IsTopHit" : (attackerStance == CombatStance.Left) ? "IsRightHit" : "IsLeftHit";
         float duration = (attackerStance == CombatStance.Top) ? hitDurationDict.GetValueOrDefault("TopHit", 0.5f) : hitDurationDict.GetValueOrDefault("SideHit", 0.5f);
