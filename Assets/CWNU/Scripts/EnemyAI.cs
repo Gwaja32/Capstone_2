@@ -64,14 +64,14 @@ public class EnemyAI : MonoBehaviour
 
     void Awake()
     {
+        // 최상위 부모나 본인에게서 CharacterController를 확실하게 가져옵니다.
         if (controller == null)
         {
-            controller = GetComponentInParent<CharacterController>();
+            controller = GetComponent<CharacterController>();
+            if (controller == null) controller = GetComponentInParent<CharacterController>();
         }
 
-        // 스폰 순간 이전 프레임의 가속도가 남아 하늘에 고정되는 현상 방지
         velocity = Vector3.zero;
-
         anim = GetComponent<Animator>();
         if (anim == null) anim = GetComponentInChildren<Animator>();
 
@@ -97,7 +97,7 @@ public class EnemyAI : MonoBehaviour
             // 기존 고정값 보존용 
             guardStaminaCost = 20f;
             minStaminaToGuard = 10f;
-            rotationSpeed = 40f;
+            rotationSpeed = 100f;
 
             if (characterData.topHitClip != null) hitDurationDict["TopHit"] = characterData.topHitClip.length;
             if (characterData.sideHitClip != null) hitDurationDict["SideHit"] = characterData.sideHitClip.length;
@@ -129,25 +129,24 @@ public class EnemyAI : MonoBehaviour
         }
         HandleStaminaRegen();
 
-        // 2. 플레이어 타겟 확보 (실시간 탐색)
-        if (playerTransform == null)
+        // 2. 플레이어 타겟 확보 (실시간 탐색으로 교정 🔴)
+        // 매 프레임 활성화된 플레이어의 최신 조준점을 실시간으로 새로 탐색하여 추적합니다.
+        GameObject pObj = GameObject.FindWithTag("Player");
+        if (pObj != null)
         {
-            // 최상위 플레이어 오브젝트를 먼저 찾습니다.
-            GameObject pObj = GameObject.FindWithTag("Player");
-            if (pObj != null)
-            {
-                // 플레이어 부모 아래 깊숙이 박힌 'Camera_Target'을 찾아서 조준점으로 박아버립니다.
-                Transform pTarget = pObj.transform.FindDeepChild("Camera_Target");
-
-                // 만약 Camera_Target을 못 찾으면 방어용으로 플레이어 본체를 꼽습니다.
-                playerTransform = pTarget != null ? pTarget : pObj.transform;
-            }
+            Transform pTarget = pObj.transform.FindDeepChild("Camera_Target");
+            // Camera_Target이 찾아졌다면 그걸 쓰고, 없거나 비활성화 상태면 플레이어 본체를 꼽습니다.
+            playerTransform = (pTarget != null && pTarget.gameObject.activeInHierarchy) ? pTarget : pObj.transform;
+        }
+        else
+        {
+            playerTransform = null;
         }
 
         // 플레이어 조준점이 없으면 리턴
         if (playerTransform == null) return;
 
-        // 피격이나 공격 상태일 때 예외 처리 순서
+        // 🔴 피격이나 공격 상태일 때 예외 처리 순서
         if (currentState == AIState.Hit || isInteracting)
         {
             UpdateLayerWeights(); // 1. 피격/공격 애니메이션 출력을 위한 가중치 연산 정상화
@@ -188,18 +187,36 @@ public class EnemyAI : MonoBehaviour
         if (!isGuarding && currentState != AIState.Hit && currentStamina < maxStamina) currentStamina += staminaRegenRate * Time.deltaTime; 
     }
 
-    private void MoveTowardsPlayer() { 
-        Vector3 dir = (playerTransform.position - transform.position).normalized; 
-        dir.y = 0; controller.Move(dir * moveSpeed * Time.deltaTime); 
+    private void MoveTowardsPlayer()
+    {
+        if (controller == null || playerTransform == null) return;
+
+        // 🔴 핵심 교정: 적의 '몸이 바라보는 정면'을 기준으로 앞으로 전진하게 만드는 게 아니라,
+        // 플레이어가 있는 월드 좌표상의 실제 방향(dir)을 계산해서 물리 컨트롤러를 밀어줍니다.
+        Vector3 dir = (playerTransform.position - controller.transform.position).normalized;
+        dir.y = 0;
+
+        controller.Move(dir * moveSpeed * Time.deltaTime);
     }
 
     private void HandleRotation(Vector3 targetPos)
     {
-        // 회전은 최상위 부모(EnemyController)를 회전시켜야 모델과 물리 방향이 일치합니다.
-        Transform targetRotationRoot = transform.parent != null ? transform.parent : transform;
-        Vector3 dir = targetPos - targetRotationRoot.position;
-        dir.y = 0;
-        if (dir != Vector3.zero) targetRotationRoot.rotation = Quaternion.Slerp(targetRotationRoot.rotation, Quaternion.LookRotation(dir), Time.deltaTime * rotationSpeed);
+        // 🔴 핵심 교정: transform.parent 대신, Awake에서 안전하게 찾아둔 
+        // 물리와 이동을 담당하는 최상위 변수인 'controller'의 transform을 직접 돌려버립니다.
+        if (controller == null) return;
+
+        Transform rootBody = controller.transform;
+
+        // 적과 플레이어 사이의 방향 계산
+        Vector3 dir = targetPos - rootBody.position;
+        dir.y = 0; // 엎드러지거나 하늘을 보지 않도록 Y축 회전 고정
+
+        if (dir != Vector3.zero)
+        {
+            // Slerp를 이용해 최상위 몸통(Controller를 가진 오브젝트)을 플레이어 쪽으로 부드럽고 빠르게 회전시킵니다.
+            // rotationSpeed가 40f로 되어있는데, 격투 게임 특성상 시선이 휙휙 돌아가야 하므로 대폭 올리거나 즉시 회전하는 것이 좋습니다.
+            rootBody.rotation = Quaternion.Slerp(rootBody.rotation, Quaternion.LookRotation(dir), Time.deltaTime * rotationSpeed);
+        }
     }
 
     private void HandleAttackPattern() { 
@@ -454,29 +471,37 @@ public class EnemyAI : MonoBehaviour
         // 1. 피격 애니메이션 시작
         anim.SetBool(b, true);
 
-        // 🔴 교정: 맞아서 경직이 들어간 시간(d) 동안은 회전하지 않고 제자리에서 피격 모션만 온전히 재생합니다.
+        // 🔴 교정: 맞아서 경직이 들어간 시간(d) 동안 이동은 안 하지만, 플레이어가 좌우로 무빙하면 시선은 실시간으로 따라가도록 보정합니다.
         float elapsed = 0f;
         while (elapsed < d)
         {
             elapsed += Time.deltaTime;
             UpdateLayerWeights();
+
+            // 피격 경직 중에도 플레이어의 최신 위치를 실시간 검색하여 바라봅니다.
+            GameObject pObj = GameObject.FindWithTag("Player");
+            if (pObj != null)
+            {
+                Transform pTarget = pObj.transform.FindDeepChild("Camera_Target");
+                Transform currentTarget = (pTarget != null && pTarget.gameObject.activeInHierarchy) ? pTarget : pObj.transform;
+                HandleRotation(currentTarget.position);
+            }
+
             yield return null;
         }
 
         // 2. 피격 애니메이션 종료
         anim.SetBool(b, false);
 
-        // 🔴 핵심 추가: 피격 경직이 끝난 직후, 다음 상태(공격/추적)로 넘어가기 전에 
-        // 플레이어 방향으로 고개를 아주 빠르게 휙 돌려줍니다.
+        // 🔴 교정: 프레임 지연 없이 즉시 정면 각도를 쳐다보도록 즉시 동기화 처리
         if (playerTransform != null && !isDead)
         {
             Transform targetRotationRoot = transform.parent != null ? transform.parent : transform;
             Vector3 dir = playerTransform.position - targetRotationRoot.position;
-            dir.y = 0; // 상하 꺾임 방지
+            dir.y = 0;
 
             if (dir != Vector3.zero)
             {
-                // Quaternion.LookRotation으로 프레임 지연 없이 즉시 정면 각도를 계산해서 꼽아버립니다.
                 targetRotationRoot.rotation = Quaternion.LookRotation(dir);
             }
         }
