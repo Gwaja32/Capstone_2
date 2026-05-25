@@ -43,7 +43,6 @@ public class TPSFixedMovement : MonoBehaviour
     [Header("Combat & Hit System")]
     public LayerMask enemyLayer;
     public float criticalAttackedDuration = 0.3f;
-    public float parryDamage = 20f;
     public bool isHitState = false;
     public bool isGuarding = false;
 
@@ -126,25 +125,27 @@ public class TPSFixedMovement : MonoBehaviour
             SoundManager.Instance.PlayBGM(0.2f);
     }
 
-    // 🔴 모든 핵심 로직을 안정적인 Update 타이틀로 롤백
     void Update()
     {
         if (isDead) return;
 
-        // 1. 입력 및 상태 제어
+        bool parryTriggered = parryAction.triggered;
+        bool attackTriggered = Mouse.current.leftButton.wasPressedThisFrame;
+
+        // 2. 상태 제어 및 행동 실행
         if (isInteracting && !isHitState)
         {
             HandleGuardInput();
             HandleAimStep();
 
-            if (Mouse.current.leftButton.wasPressedThisFrame)
+            if (attackTriggered)
             {
                 ExecuteAttack();
             }
 
-            if (parryAction.triggered)
+            if (parryTriggered)
             {
-                ExecuteParry();
+                ExecuteParry(); // 이제 언제 눌러도 씹히지 않고 이 함수를 호출합니다.
             }
         }
 
@@ -152,7 +153,6 @@ public class TPSFixedMovement : MonoBehaviour
         HandleStaminaRegen();
         ApplyMovement();
         UpdateActionLayerWeight();
-
         // 3. 애니메이터 파라미터 동기화
         UpdateAnimationParams();
     }
@@ -210,6 +210,13 @@ public class TPSFixedMovement : MonoBehaviour
             currentStamina += staminaRegenRate * Time.deltaTime;
             currentStamina = Mathf.Min(currentStamina, maxStamina);
         }
+    }
+
+    private void StopAndClear(ref Coroutine coroutine)
+    {
+        if (coroutine == null) return;
+        StopCoroutine(coroutine);
+        coroutine = null;
     }
 
     private void ApplyMovement()
@@ -443,27 +450,24 @@ public class TPSFixedMovement : MonoBehaviour
     private void ExecuteParry()
     {
         if (!isInteracting || isHitState || parryCoroutine != null || attackCoroutine != null) return;
-        isInteracting = false;
+        
         parryCoroutine = StartCoroutine(ParryRoutine());
     }
     private IEnumerator ParryRoutine()
     {
-        float originalActionWeight = anim.GetLayerWeight(actionLayerIndex);
-        anim.SetLayerWeight(actionLayerIndex, 0f); // 상체 레이어 간섭 차단
+        anim.SetLayerWeight(actionLayerIndex, 0f);
+
         isInteracting = false;
         isGuarding = false;
 
-        // [SOUND] 패링 시도 소리 (공격 소리와 공유하거나 별도 할당 가능)
         SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.5f);
 
-        anim.SetBool("IsParry", true);
-        CheckCombatHit(parryDamage, true);
+        anim.SetTrigger("IsParry");
+        CheckCombatHit(0, true);
 
         yield return new WaitForSeconds(parryDuration);
 
-        anim.SetBool("IsParry", false);
-        isInteracting = true;
-        anim.SetLayerWeight(actionLayerIndex, originalActionWeight);
+        anim.SetLayerWeight(actionLayerIndex, 1f);
 
         if (guardAction.IsPressed() && currentStamina >= minStaminaToGuard)
         {
@@ -688,22 +692,11 @@ public class TPSFixedMovement : MonoBehaviour
         currentHealth -= 20f;
         if (currentHealth <= 0) { Die(); return; }
 
-        // TakeDamage 함수 내부 수정 제안
-        if (attackCoroutine != null)
-        {
-            StopCoroutine(attackCoroutine);
-            attackCoroutine = null; // 강제 종료 후 반드시 null 처리
-        }
-        if (parryCoroutine != null)
-        {
-            StopCoroutine(parryCoroutine);
-            parryCoroutine = null;  // 강제 종료 후 반드시 null 처리
-        }
-        if (hitCoroutine != null)
-        {
-            StopCoroutine(hitCoroutine);
-            hitCoroutine = null; // 확실하게 밀어주기
-        }
+
+        StopAndClear(ref attackCoroutine);
+        StopAndClear(ref parryCoroutine);
+        StopAndClear(ref hitCoroutine);
+        StopAndClear(ref criticalAttackCoroutine);
 
         ResetAllActionBools();
         isCriticalAttacking = false;
