@@ -120,9 +120,6 @@ public class TPSFixedMovement : MonoBehaviour
 
         if (topHitClip != null) hitDurationDict["TopHit"] = topHitClip.length;
         if (sideHitClip != null) hitDurationDict["SideHit"] = sideHitClip.length;
-
-        if (SoundManager.Instance != null)
-            SoundManager.Instance.PlayBGM(0.2f);
     }
 
     void Update()

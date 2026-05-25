@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement; // 🔴 씬 전환 감지를 위해 추가
 using System.Collections.Generic;
 
 public class SoundManager : MonoBehaviour
@@ -9,8 +10,10 @@ public class SoundManager : MonoBehaviour
     private List<AudioSource> sfxSources = new List<AudioSource>();
     public int sfxChannelCount = 15; // 병렬 재생 채널 수
 
-    [Header("BGM")]
-    public AudioClip mainBGM; // 1개
+    [Header("BGM Clips")]
+    public AudioClip lobbyBGM;   // "Lobby" 씬 BGM
+    public AudioClip selectBGM;  // "Select" 씬 BGM
+    public AudioClip battleBGM;  // "Test" 씬 BGM
 
     [Header("Combat SFX")]
     public AudioClip[] clashSounds;   // 4개 (가드 성공)
@@ -23,6 +26,14 @@ public class SoundManager : MonoBehaviour
     public AudioClip victorySound;     // 1개 (승리)
     public AudioClip[] defeatSounds;   // 3개 (패배)
 
+    // 볼륨 설정을 저장할 내부 변수들 (0.0f ~ 1.0f)
+    private float bgmVolume = 0.5f;
+    private float sfxVolume = 1.0f;
+
+    // 음소거 상태 변수들
+    private bool isBGMMuted = false;
+    private bool isSFXMuted = false;
+
     void Awake()
     {
         if (Instance == null)
@@ -31,7 +42,23 @@ public class SoundManager : MonoBehaviour
             DontDestroyOnLoad(gameObject);
             InitSoundSystem();
         }
-        else { Destroy(gameObject); }
+        else
+        {
+            Destroy(gameObject);
+            return; // 중복 생성 시 아래 로직 실행 방지
+        }
+    }
+
+    void OnEnable()
+    {
+        // 🔴 씬이 로드될 때마다 OnSceneLoaded 함수가 자동으로 실행되도록 리스너 등록
+        SceneManager.sceneLoaded += OnSceneLoaded;
+    }
+
+    void OnDisable()
+    {
+        // 오브젝트가 파괴되거나 꺼질 때 리스너 해제 (메모리 누수 방지)
+        SceneManager.sceneLoaded -= OnSceneLoaded;
     }
 
     private void InitSoundSystem()
@@ -46,40 +73,129 @@ public class SoundManager : MonoBehaviour
         }
     }
 
-    // --- 재생 핵심 함수 (랜덤 피치 및 랜덤 클립) ---
-    public void PlayRandomSFX(AudioClip[] clips, float volume = 1.0f)
+    // 🔴 [핵심] 씬 전환을 자동으로 감지하여 BGM을 틀어주는 이벤트 함수
+    private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        AudioClip targetBGM = null;
+
+        // 씬 이름에 따라 틀어줄 BGM 에셋 매핑
+        switch (scene.name)
+        {
+            case "Lobby":
+                targetBGM = lobbyBGM;
+                break;
+            case "Select":
+                targetBGM = selectBGM;
+                break;
+            case "Test":
+                targetBGM = battleBGM;
+                break;
+        }
+
+        // 선택된 BGM을 재생시킵니다.
+        PlayBGM(targetBGM);
+    }
+
+    // 🔴 내부 BGM 재생 로직 (기존 씬 BGM과 같으면 중복 재생 방지)
+    private void PlayBGM(AudioClip clip)
+    {
+        if (clip == null)
+        {
+            bgmSource.Stop();
+            return;
+        }
+
+        // 이미 같은 BGM이 재생 중이라면 처음부터 다시 틀지 않고 유지합니다. (씬 이동 시 뚝 끊김 방지)
+        if (bgmSource.clip == clip && bgmSource.isPlaying) return;
+
+        bgmSource.clip = clip;
+        // 음소거 상태면 0, 아니면 설정된 BGM 볼륨 적용
+        bgmSource.volume = isBGMMuted ? 0f : bgmVolume;
+        bgmSource.Play();
+    }
+
+    // --- 🎛️ 설정창 연동용 함수화 (볼륨 및 음소거) ---
+
+    /// <summary>
+    /// UI 슬라이더 등과 연동하여 BGM 볼륨을 조절하는 함수 (0.0f ~ 1.0f)
+    /// </summary>
+    public void SetBGMVolume(float volume)
+    {
+        bgmVolume = Mathf.Clamp01(volume);
+
+        // 음소거 상태가 아닐 때만 실제 오디오 소스 볼륨을 실시간 갱신합니다.
+        if (!isBGMMuted)
+        {
+            bgmSource.volume = bgmVolume;
+        }
+    }
+
+    /// <summary>
+    /// UI 슬라이더 등과 연동하여 모든 SFX 볼륨을 조절하는 함수 (0.0f ~ 1.0f)
+    /// </summary>
+    public void SetSFXVolume(float volume)
+    {
+        sfxVolume = Mathf.Clamp01(volume);
+
+        // 현재 재생 중인 SFX 오디오 채널들의 볼륨도 실시간으로 반영합니다.
+        if (!isSFXMuted)
+        {
+            foreach (var source in sfxSources)
+            {
+                source.volume = sfxVolume;
+            }
+        }
+    }
+
+    /// <summary>
+    /// BGM 음소거 토글 함수 (켜져 있으면 끄고, 꺼져 있으면 켬)
+    /// </summary>
+    public void ToggleBGMMute()
+    {
+        isBGMMuted = !isBGMMuted;
+        bgmSource.volume = isBGMMuted ? 0f : bgmVolume;
+    }
+
+    /// <summary>
+    /// SFX 음소거 토글 함수
+    /// </summary>
+    public void ToggleSFXMute()
+    {
+        isSFXMuted = !isSFXMuted;
+
+        // 음소거 상태가 되면 현재 재생 중인 이펙트 소리도 즉시 0으로 만듭니다.
+        foreach (var source in sfxSources)
+        {
+            source.volume = isSFXMuted ? 0f : sfxVolume;
+        }
+    }
+
+
+    // --- ⚔️ 재생 핵심 함수 (SFX) ---
+    public void PlayRandomSFX(AudioClip[] clips, float volumeMultiplier = 1.0f)
     {
         if (clips == null || clips.Length == 0) return;
 
-        // 1. 배열 중 랜덤하게 하나 선택
         AudioClip clip = clips[Random.Range(0, clips.Length)];
 
         foreach (var source in sfxSources)
         {
             if (!source.isPlaying)
             {
-                // 2. 미세한 피치 조절로 자연스러움 추가 (0.9 ~ 1.1)
                 source.pitch = Random.Range(0.9f, 1.1f);
                 source.clip = clip;
-                source.volume = volume;
+
+                // 🔴 핵심 교정: 음소거 상태면 0, 아니면 [설정창 전역 SFX 볼륨 * 개별 호출 볼륨] 세팅
+                source.volume = isSFXMuted ? 0f : (sfxVolume * volumeMultiplier);
                 source.Play();
                 return;
             }
         }
     }
 
-    // 단일 사운드용 (승리 등)
-    public void PlaySingleSFX(AudioClip clip, float volume = 1.0f)
+    public void PlaySingleSFX(AudioClip clip, float volumeMultiplier = 1.0f)
     {
         if (clip == null) return;
-        PlayRandomSFX(new AudioClip[] { clip }, volume);
-    }
-
-    public void PlayBGM(float volume = 0.5f)
-    {
-        if (mainBGM == null) return;
-        bgmSource.clip = mainBGM;
-        bgmSource.volume = volume;
-        bgmSource.Play();
+        PlayRandomSFX(new AudioClip[] { clip }, volumeMultiplier);
     }
 }
