@@ -4,7 +4,6 @@ using System.Collections.Generic;
 using Unity.Cinemachine;
 using UnityEngine;
 using UnityEngine.InputSystem;
-using static UnityEngine.EventSystems.EventTrigger;
 
 public class TPSFixedMovement : MonoBehaviour
 {
@@ -31,7 +30,7 @@ public class TPSFixedMovement : MonoBehaviour
     [Header("Aim Step Settings")]
     //public float shoulderOffset = 1.5f; // 캐릭터 키(0.8)에 맞춰 조정
     public float mouseStepThreshold = 1000f;
-    public float mouseDecaySpeed = 3f;
+    public float mouseDecaySpeed = 0f;
     //public float camTransitionSpeed = 15f;
 
     [Header("Combat Stance")]
@@ -90,6 +89,11 @@ public class TPSFixedMovement : MonoBehaviour
 
     void Start()
     {
+        if (SettingsManager.Instance != null)
+        {
+            SettingsManager.Instance.ApplyControls();
+        }
+
         if (characterData != null)
         {
             // 데이터 동적 로드
@@ -132,6 +136,12 @@ public class TPSFixedMovement : MonoBehaviour
     {
         if (isDead) return;
 
+        // 🔴 이 부분 추가: 일시정지 상태라면 아래 조작 로직을 전부 스킵
+        if (Mathf.Approximately(Time.timeScale, 0f))
+        {
+            return;
+        }
+
         bool parryTriggered = parryAction.triggered;
         bool attackTriggered = Mouse.current.leftButton.wasPressedThisFrame;
 
@@ -163,7 +173,7 @@ public class TPSFixedMovement : MonoBehaviour
 
     void LateUpdate()
     {
-        if (isDead || isCriticalAttacking) return;
+        if (isDead || isCriticalAttacking || Mathf.Approximately(Time.timeScale, 0f)) return;
         PlayerController parentController = transform.parent.GetComponent<PlayerController>();
         if (parentController != null && parentController.currentLockOnTarget != null)
         {
@@ -286,6 +296,8 @@ public class TPSFixedMovement : MonoBehaviour
     // [SOUND] 애니메이션 이벤트용 발걸음 함수
     public void PlayFootstep()
     {
+        if (Mathf.Approximately(Time.timeScale, 0f)) return;
+
         // 이동 중이고 인터랙션 중일 때만 소리 재생
         Vector2 moveInput = moveAction.ReadValue<Vector2>();
         if (moveInput.magnitude > 0.1f && isInteracting && !isHitState)
