@@ -4,7 +4,7 @@ using System.Collections.Generic;
 
 public class SoundManager : MonoBehaviour
 {
-    public static SoundManager Instance;
+    public static SoundManager _instance;
 
     private AudioSource bgmSource;
     private List<AudioSource> sfxSources = new List<AudioSource>();
@@ -34,19 +34,51 @@ public class SoundManager : MonoBehaviour
     private bool isBGMMuted = false;
     private bool isSFXMuted = false;
 
+    public static SoundManager Instance
+    {
+        get
+        {
+            if (_instance != null) return _instance;
+
+            _instance = FindFirstObjectByType<SoundManager>();
+
+            if (_instance == null)
+            {
+                GameObject prefab = Resources.Load<GameObject>("SoundManager");
+                if (prefab != null)
+                {
+                    GameObject go = Instantiate(prefab);
+                    _instance = go.GetComponent<SoundManager>();
+                    Debug.Log("[SoundManager] 프리팹을 자동으로 생성했습니다.");
+                }
+                else
+                {
+                    Debug.LogError("[SoundManager] Resources 폴더에서 'SoundManager' 프리팹을 찾을 수 없습니다!");
+                }
+            }
+
+            return _instance;
+        }
+    }
+
     void Awake()
     {
-        if (Instance == null)
+        // --- Awake 로직도 안전장치로 유지 ---
+        if (_instance == null)
         {
-            Instance = this;
+            _instance = this;
             DontDestroyOnLoad(gameObject);
             InitSoundSystem();
         }
-        else
+        else if (_instance != this)
         {
             Destroy(gameObject);
-            return; // 중복 생성 시 아래 로직 실행 방지
+            return;
         }
+
+        // ⚠️ [주의] 자동으로 생성되는 경우, 최초 생성 시점에는 OnSceneLoaded가 이미 지나갔을 수 있습니다.
+        // 이를 방지하기 위해 생성되자마자 현재 씬의 BGM을 체크하도록 강제 실행해 줍니다.
+        OnSceneLoaded(SceneManager.GetActiveScene(), LoadSceneMode.Single);
     }
 
     void OnEnable()

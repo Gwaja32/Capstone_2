@@ -14,14 +14,19 @@ public class TPSFixedMovement : MonoBehaviour
     private float moveSpeed;
     private float maxHealth;
     private float currentHealth;
-    private float maxStamina;
-    private float currentStamina;
-    private float staminaRegenRate;
     private float attackRange;
     private float attackDuration;
     private float parryDuration;
     private AnimationClip topHitClip;
     private AnimationClip sideHitClip;
+
+    private float maxStamina;
+    private float currentStamina;
+    private float staminaRegenRate;
+    private float guardStaminaCost;
+    private float attackStaminaCost;
+    private float parryStaminaCost;
+    private float criticalAttackStaminaCost;
 
     [Header("Aim Step Settings")]
     //public float shoulderOffset = 1.5f; // 캐릭터 키(0.8)에 맞춰 조정
@@ -31,10 +36,6 @@ public class TPSFixedMovement : MonoBehaviour
 
     [Header("Combat Stance")]
     public CombatStance currentStance = CombatStance.Top;
-
-    [Header("Stats Settings")]
-    public float guardStaminaCost = 25f;
-    public float minStaminaToGuard = 10f;
 
     [Header("Movement Settings")]
     public float guardSpeedMultiplier = 0.4f;
@@ -95,12 +96,17 @@ public class TPSFixedMovement : MonoBehaviour
             moveSpeed = characterData.moveSpeed;
             maxHealth = characterData.maxHealth;
             currentHealth = maxHealth;
-            maxStamina = characterData.maxStamina;
-            currentStamina = maxStamina;
-            staminaRegenRate = characterData.staminaRegenRate;
             attackRange = characterData.attackRange;
             attackDuration = characterData.attackDuration;
             parryDuration = characterData.parryDuration;
+            maxStamina = characterData.maxStamina;
+            currentStamina = characterData.maxStamina;
+            staminaRegenRate = characterData.staminaRegenRate;
+            guardStaminaCost = characterData.guardStaminaCost;
+            attackStaminaCost = characterData.attackStaminaCost;
+            parryStaminaCost = characterData.parryStaminaCost;
+            criticalAttackStaminaCost = characterData.criticalAttackStaminaCost;
+
 
             if (characterData.topHitClip != null)
                 hitDurationDict["TopHit"] = characterData.topHitClip.length;
@@ -190,14 +196,17 @@ public class TPSFixedMovement : MonoBehaviour
 
     private void HandleGuardInput()
     {
-        if (guardAction.IsPressed() && currentStamina > 0)
+        if (guardAction.IsPressed() && currentStamina >= guardStaminaCost)
         {
-            if (!isGuarding && currentStamina >= minStaminaToGuard)
-                isGuarding = true;
+            isGuarding = true;
         }
         else isGuarding = false;
 
-        if (currentStamina <= 0) isGuarding = false;
+        if (currentStamina <= 0f)
+        {
+            currentStamina = 0f;
+            isGuarding = false;
+        }
     }
 
     private void HandleStaminaRegen()
@@ -313,17 +322,29 @@ public class TPSFixedMovement : MonoBehaviour
             EnemyAI target = hit.collider.GetComponent<EnemyAI>();
             if (target != null && target.isParried)
             {
-                if (criticalAttackCoroutine != null) StopCoroutine(criticalAttackCoroutine);
-                criticalAttackCoroutine = StartCoroutine(CriticalAttackRoutine(target));
-                return;
+                if (currentStamina >= criticalAttackStaminaCost)
+                {
+                    if (criticalAttackCoroutine != null) StopCoroutine(criticalAttackCoroutine);
+                    criticalAttackCoroutine = StartCoroutine(CriticalAttackRoutine(target));
+                    return;
+                }
+                else
+                {
+                    return;
+                }
             }
         }
-
-        attackCoroutine = StartCoroutine(AttackRoutine());
+        if (currentStamina >= attackStaminaCost)
+        {
+            attackCoroutine = StartCoroutine(AttackRoutine());
+        }
     }
 
     private IEnumerator AttackRoutine()
     {
+        currentStamina -= attackStaminaCost;
+        currentStamina = Mathf.Max(currentStamina, 0f);
+
         isInteracting = false;
         isGuarding = false;
         anim.SetLayerWeight(actionLayerIndex, 0f);
@@ -348,6 +369,9 @@ public class TPSFixedMovement : MonoBehaviour
     // 치명 공격 루틴
     private IEnumerator CriticalAttackRoutine(EnemyAI targetEnemy)
     {
+        currentStamina -= criticalAttackStaminaCost;
+        currentStamina = Mathf.Max(currentStamina, 0f);
+
         isCriticalAttacking = true;
         isInteracting = false;
         isGuarding = false;
@@ -447,11 +471,17 @@ public class TPSFixedMovement : MonoBehaviour
     private void ExecuteParry()
     {
         if (!isInteracting || isHitState || parryCoroutine != null || attackCoroutine != null) return;
-        
-        parryCoroutine = StartCoroutine(ParryRoutine());
+
+        if (currentStamina >= parryStaminaCost)
+        {
+            parryCoroutine = StartCoroutine(ParryRoutine());
+        }
     }
     private IEnumerator ParryRoutine()
     {
+        currentStamina -= parryStaminaCost;
+        currentStamina = Mathf.Max(currentStamina, 0f);
+
         anim.SetLayerWeight(actionLayerIndex, 0f);
 
         isInteracting = false;
@@ -466,7 +496,7 @@ public class TPSFixedMovement : MonoBehaviour
 
         anim.SetLayerWeight(actionLayerIndex, 1f);
 
-        if (guardAction.IsPressed() && currentStamina >= minStaminaToGuard)
+        if (guardAction.IsPressed() && currentStamina >= guardStaminaCost)
         {
             isGuarding = true;
         }

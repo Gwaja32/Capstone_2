@@ -14,9 +14,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CharacterData
   characterName: Alix
   maxHealth: 100
-  maxStamina: 100
-  staminaRegenRate: 20
   moveSpeed: 1
+  maxStamina: 100
+  staminaRegenRate: 5
+  guardStaminaCost: 30
+  attackStaminaCost: 20
+  parryStaminaCost: 20
+  criticalAttackStaminaCost: 15
   attackRange: 1
   attackDuration: 1.16
   parryDuration: 2

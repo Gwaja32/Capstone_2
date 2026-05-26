@@ -20,15 +20,16 @@ public class SimpleStatusUI : MonoBehaviour
 
     void Update()
     {
-        // 데이터와 UI가 모두 연결된 상태에서만 실시간 업데이트 수행
         if (playerSource != null && hpBar != null && staminaBar != null)
         {
-            hpBar.fillAmount = playerSource.getCurrentHealth() / playerSource.getMaxHealth();
-            staminaBar.fillAmount = playerSource.getCurrentStamina() / playerSource.getMaxStamina();
+            float maxHp = playerSource.getMaxHealth() > 0 ? (float)playerSource.getMaxHealth() : 1f;
+            float maxStamina = playerSource.getMaxStamina() > 0 ? (float)playerSource.getMaxStamina() : 1f;
+
+            hpBar.fillAmount = (float)playerSource.getCurrentHealth() / maxHp;
+            staminaBar.fillAmount = (float)playerSource.getCurrentStamina() / maxStamina;
         }
         else if (enemySource != null && hpBar != null && staminaBar != null)
         {
-            // 분모가 0이 되어 fillAmount가 터지는 현상 방지 예외 처리
             float maxHp = enemySource.maxHealth > 0 ? enemySource.maxHealth : 1f;
             float maxStamina = enemySource.maxStamina > 0 ? enemySource.maxStamina : 1f;
 

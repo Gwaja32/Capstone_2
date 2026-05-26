@@ -6,6 +6,9 @@ using UnityEngine.UI;
 
 public class SelectManager : MonoBehaviour
 {
+    [Header("Audio Clips")]
+    public AudioClip sceneStartSound;
+
     [Header("VS Match UI Settings")]
     public GameObject vsMatchPanel;      // VS 연출 전체 판넬
     public float illustrationDisplayTime = 5.0f; // 일러스트 감상 시간 (초)
@@ -38,6 +41,7 @@ public class SelectManager : MonoBehaviour
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
     {
+        SoundManager.Instance.PlaySingleSFX(sceneStartSound);
         bm = FindFirstObjectByType<BattleManager>();
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
