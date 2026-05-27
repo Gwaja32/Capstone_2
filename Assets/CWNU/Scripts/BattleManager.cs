@@ -37,6 +37,9 @@ public class BattleManager : MonoBehaviour
     private Image enemyHPBarImage;
     private Image enemyStaminaBarImage;
 
+    private Image playerPortraitImage;
+    private Image enemyPortraitImage;
+
     private List<string> remainingEnemies;
     private GameObject currentActiveModel;
     private bool isInitialized = false;
@@ -199,6 +202,12 @@ public class BattleManager : MonoBehaviour
                 if (hpTF != null) enemyHPBarImage = hpTF.GetComponent<Image>();
                 if (staminaTF != null) enemyStaminaBarImage = staminaTF.GetComponent<Image>();
             }
+
+            Transform playerPortraitTF = mainCanvas.transform.Find("StatusUIGroup/Player_Bar/Portrait");
+            Transform enemyPortraitTF = mainCanvas.transform.Find("StatusUIGroup/Enemy_Bar/Portrait");
+
+            if (playerPortraitTF != null) playerPortraitImage = playerPortraitTF.GetComponent<Image>();
+            if (enemyPortraitTF != null) enemyPortraitImage = enemyPortraitTF.GetComponent<Image>();
         }
 
         if (!isInitialized || remainingEnemies == null)
@@ -225,6 +234,28 @@ public class BattleManager : MonoBehaviour
 
         // 3. 최종적으로 '선택창에서 뽑힌 적'의 모델을 맵에 활성화합니다!
         ActivateEnemyModelByName(enemyCharacterName);
+        ApplyPortraits();
+    }
+
+    /// <summary>
+    /// 🔴 [새로 추가된 함수] 
+    /// Resources 폴더에서 현재 플레이어와 적 이름에 맞는 초상화를 가져와 UI에 적용합니다.
+    /// </summary>
+    private void ApplyPortraits()
+    {
+        // 1. 플레이어 초상화 적용
+        if (playerPortraitImage != null && !string.IsNullOrEmpty(selectedCharacterName))
+        {
+            Sprite playerSprite = Resources.Load<Sprite>($"Portraits/{selectedCharacterName}");
+            if (playerSprite != null) playerPortraitImage.sprite = playerSprite;
+        }
+
+        // 2. 적 초상화 적용
+        if (enemyPortraitImage != null && !string.IsNullOrEmpty(enemyCharacterName))
+        {
+            Sprite enemySprite = Resources.Load<Sprite>($"Portraits/{enemyCharacterName}");
+            if (enemySprite != null) enemyPortraitImage.sprite = enemySprite;
+        }
     }
 
     public void StartNextStage()
