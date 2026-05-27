@@ -167,7 +167,11 @@ public class TPSFixedMovement : MonoBehaviour
                 return;
             }
 
+            if (!IsValidVector(transform.position))
+                return;
+
             Vector3 targetDir = parentController.currentLockOnTarget.position - transform.position;
+
             if (targetDir.sqrMagnitude > 0.09f)
             {
                 targetDir.y = 0;
@@ -260,7 +264,9 @@ public class TPSFixedMovement : MonoBehaviour
             float speedMultiplier = isGuarding ? guardSpeedMultiplier : 1.0f;
 
             Vector3 move = (transform.forward * moveInput.y + transform.right * moveInput.x);
-            if (move.magnitude > 1f) move.Normalize();
+
+            if (move.magnitude > 1f)
+                move.Normalize();
 
             finalMove += move * moveSpeed * speedMultiplier;
 
@@ -274,7 +280,19 @@ public class TPSFixedMovement : MonoBehaviour
         }
 
         finalMove.y = velocity.y;
+
+        if (!IsValidVector(finalMove))
+        {
+            Debug.LogError("Invalid finalMove");
+            finalMove = Vector3.zero;
+        }
+
         controller.Move(finalMove * Time.deltaTime);
+    }
+
+    private bool IsValidVector(Vector3 v)
+    {
+        return !(float.IsNaN(v.x) || float.IsNaN(v.y) || float.IsNaN(v.z) || float.IsInfinity(v.x) || float.IsInfinity(v.y) || float.IsInfinity(v.z));
     }
 
     private void UpdateActionLayerWeight()
@@ -368,6 +386,15 @@ public class TPSFixedMovement : MonoBehaviour
         Vector3 toEnemyDir = (targetEnemy.transform.position - transform.position).normalized;
         toEnemyDir.y = 0;
 
+        if (toEnemyDir.sqrMagnitude < 0.0001f)
+        {
+            toEnemyDir = transform.forward;
+        }
+        else
+        {
+            toEnemyDir.Normalize();
+        }
+
         Vector3 myRightDir = Vector3.Cross(Vector3.up, toEnemyDir);
 
         float forwardOffset = 0.3f;
@@ -449,7 +476,7 @@ public class TPSFixedMovement : MonoBehaviour
     private void ExecuteParry()
     {
         if (!isInteracting || isHitState || parryCoroutine != null || attackCoroutine != null) return;
-
+        
         if (currentStamina >= parryStaminaCost)
         {
             parryCoroutine = StartCoroutine(ParryRoutine());
@@ -728,13 +755,19 @@ public class TPSFixedMovement : MonoBehaviour
     private void Die()
     {
         isDead = true;
+
+        velocity = Vector3.zero;
+        externalForce = Vector3.zero;
+
         ResetAllTriggers();
+        StopAllCoroutines();
+
+        anim.applyRootMotion = false; // 중요
         anim.SetTrigger("IsDead");
 
-        SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.defeatSounds, 1.0f);
+        // controller 유지
+        // controller.enabled = false; 제거
 
-        isInteracting = false;
-        StopAllCoroutines();
         actionMap.Disable();
 
         StartCoroutine(DeadSequence());
