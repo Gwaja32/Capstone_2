@@ -321,6 +321,40 @@ public class SettingsManager : MonoBehaviour
         OnSfxMuteChanged?.Invoke(IsSfxMuted);
     }
 
+    public void ExitGame()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit(); // 어플리케이션 종료
+#endif
+    }
+
+    public void MoveToLobby()
+    {
+        // 1. 현재 활성화된 씬의 이름을 가져옴
+        string currentSceneName = SceneManager.GetActiveScene().name;
+
+        // 2. 현재 씬이 "Lobby"가 아닌지 체크
+        if (currentSceneName != "Lobby")
+        {
+            Debug.Log($"[SceneController] 현재 씬이 '{currentSceneName}'이므로 'Lobby' 씬으로 이동을 시작합니다.");
+
+            BattleManager.Instance.currentStage = 1;
+
+            // 💡 만약 일시정지(Time.timeScale = 0) 상태에서 이동하는 거라면 
+            // 원래 시간 속도로 복구해 주는 게 안전해! (안 그러면 로비도 멈춤)
+            Time.timeScale = 1f;
+
+            // 3. 로비 씬으로 즉시 로드
+            SceneManager.LoadScene("Lobby");
+        }
+        else
+        {
+            Debug.Log("[SceneController] 현재 이미 'Lobby' 씬에 머물고 있습니다.");
+        }
+    }
+
     private void ApplyAudio()
     {
         // 1. 마스터 볼륨 및 마스터 뮤트 처리 (유니티 전역 리스너 조절 : 0~1)
