@@ -234,13 +234,12 @@ public class EnemyAI : MonoBehaviour
         isInteracting = true; isGuarding = false; isAttacking = true;
         currentStance = (CombatStance)Random.Range(0, 3);
         currentStamina -= 15f;
-        ResetAllActionBools();
 
         if (SoundManager.Instance != null)
             SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.5f);
 
-        string bName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
-        anim.SetBool(bName, true);
+        string triggerName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
+        anim.SetTrigger(triggerName);
 
         // 타격 판정이 발생하기 전까지 기다립니다.
         // 이 0.4초 동안 적은 isAttacking = true 상태이므로 패링이 가능해집니다!
@@ -251,7 +250,6 @@ public class EnemyAI : MonoBehaviour
 
         yield return new WaitForSeconds(attackDuration - windUpTime);
 
-        anim.SetBool(bName, false);
         isInteracting = false; isAttacking = false;
     }
 
@@ -293,7 +291,6 @@ public class EnemyAI : MonoBehaviour
         if (currentHealth <= 0) { Die(); return; }
 
         StopAllCoroutines();
-        ResetAllActionBools();
         isInteracting = false;
 
         string hitBool = (attackerStance == CombatStance.Top) ? "IsTopHit" : (attackerStance == CombatStance.Left) ? "IsRightHit" : "IsLeftHit";
@@ -308,8 +305,6 @@ public class EnemyAI : MonoBehaviour
 
         StopAllCoroutines();
 
-        ResetAllActionBools();
-
         currentState = AIState.Hit;
         isAttacking = false;
         isInteracting = false;
@@ -321,7 +316,7 @@ public class EnemyAI : MonoBehaviour
     {
         isParried = true;
 
-        anim.SetBool("IsParried", true);
+        anim.SetTrigger("IsParried");
 
         anim.Play("Parried", actionLayerIndex, 0f);
 
@@ -333,7 +328,6 @@ public class EnemyAI : MonoBehaviour
         {
             isParried = false; 
             anim.speed = 1f;
-            anim.SetBool("IsParried", false);
             currentState = AIState.Idle;
         }
     }
@@ -344,7 +338,6 @@ public class EnemyAI : MonoBehaviour
 
         anim.speed = 1f;
         StopAllCoroutines();
-        anim.SetBool("IsParried", false);
 
         isInteracting = false;
 
@@ -364,7 +357,7 @@ public class EnemyAI : MonoBehaviour
         isAttacking = false;
         isParried = false;
 
-        anim.CrossFadeInFixedTime("CriticalAttackedUpper", 0.1f);
+        anim.SetTrigger("IsCriAtckedUp");
 
         Vector3 pushForce = -transform.forward * 2.5f;
         float elapsed = 0f;
@@ -397,7 +390,7 @@ public class EnemyAI : MonoBehaviour
         isAttacking = false;
         isParried = false;
 
-        anim.CrossFadeInFixedTime("CriticalAttackedUnder", 0.1f);
+        anim.SetTrigger("IsCriAtckedUnder");
 
         Vector3 pushForce = Vector3.zero;
         float elapsed = 0f;
@@ -431,7 +424,6 @@ public class EnemyAI : MonoBehaviour
         ApplyDamage(damage);
         isDead = true;
         StopAllCoroutines();
-        ResetAllActionBools();
         currentState = AIState.Dead;
         controller.enabled = false;
 
@@ -469,7 +461,7 @@ public class EnemyAI : MonoBehaviour
         anim.SetFloat("InputY", 0);
 
         // 1. 피격 애니메이션 시작
-        anim.SetBool(b, true);
+        anim.SetTrigger(b);
 
         // 🔴 교정: 맞아서 경직이 들어간 시간(d) 동안 이동은 안 하지만, 플레이어가 좌우로 무빙하면 시선은 실시간으로 따라가도록 보정합니다.
         float elapsed = 0f;
@@ -490,8 +482,6 @@ public class EnemyAI : MonoBehaviour
             yield return null;
         }
 
-        // 2. 피격 애니메이션 종료
-        anim.SetBool(b, false);
 
         // 🔴 교정: 프레임 지연 없이 즉시 정면 각도를 쳐다보도록 즉시 동기화 처리
         if (playerTransform != null && !isDead)
@@ -514,8 +504,7 @@ public class EnemyAI : MonoBehaviour
     {
         isDead = true;
         StopAllCoroutines();
-        ResetAllActionBools();
-        anim.SetBool("IsDead", true);
+        anim.SetTrigger("IsDead");
         currentState = AIState.Dead;
         controller.enabled = false;
 
@@ -527,16 +516,6 @@ public class EnemyAI : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
 
         if (BattleManager.Instance != null) BattleManager.Instance.OnEnemyDefeated();
-    }
-
-    private void ResetAllActionBools() { 
-        anim.SetBool("IsTopAttack", false); 
-        anim.SetBool("IsLeftAttack", false); 
-        anim.SetBool("IsRightAttack", false); 
-        anim.SetBool("IsTopHit", false); 
-        anim.SetBool("IsLeftHit", false); 
-        anim.SetBool("IsRightHit", false); 
-        anim.SetBool("IsParried", false); 
     }
 
     // 🔴 [수정 완료] 가드 중이거나, 공격·피격을 하지 않는 평상시 상태일 때 가중치를 1로 복구
@@ -578,8 +557,6 @@ public class EnemyAI : MonoBehaviour
 
         if (SoundManager.Instance != null)
             SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.parrySounds, 0.6f);
-
-        ResetAllActionBools();
 
         yield return new WaitForSeconds(duration);
 

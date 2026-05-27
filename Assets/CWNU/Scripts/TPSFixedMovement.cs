@@ -307,6 +307,7 @@ public class TPSFixedMovement : MonoBehaviour
     }
 
     // 모든 애니메이션 파라미터를 깨끗하게 밀어버리는 함수
+    /*
     private void ResetAllActionBools()
     {
         anim.SetBool("IsTopAttack", false);
@@ -322,6 +323,7 @@ public class TPSFixedMovement : MonoBehaviour
         anim.SetBool("IsCriAtckUp", false);
         anim.SetBool("IsCriAtckUnder", false);
     }
+    */
 
     private void ExecuteAttack()
     {
@@ -360,18 +362,16 @@ public class TPSFixedMovement : MonoBehaviour
         isInteracting = false;
         isGuarding = false;
         anim.SetLayerWeight(actionLayerIndex, 0f);
-        ResetAllActionBools();
 
         SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.6f);
-        string boolName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
+        string triggerName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
 
-        anim.SetBool(boolName, true);
+        anim.SetTrigger(triggerName);
         CheckCombatHit(15f, false);
 
         yield return null;
         yield return new WaitForSeconds(attackDuration);
 
-        anim.SetBool(boolName, false);
         anim.SetLayerWeight(actionLayerIndex, 1f);
 
         isInteracting = true;
@@ -387,7 +387,6 @@ public class TPSFixedMovement : MonoBehaviour
         isCriticalAttacking = true;
         isInteracting = false;
         isGuarding = false;
-        ResetAllActionBools();
 
         // 0. 상대 체력에 따른 공격 종류를 제일 먼저 판별합니다.
         bool isUpperAttack = targetEnemy.currentHealth > 50f;
@@ -444,16 +443,15 @@ public class TPSFixedMovement : MonoBehaviour
         float kickImpactTime;
         float totalAnimDuration;
 
-        // [수정] anim.Play(layer 0, layer 1 중복)를 버리고, Base Layer에서 부드럽게 크로스페이드로 단독 재생
         if (isUpperAttack)
         {
-            anim.CrossFadeInFixedTime("CriticalAttackUpper", 0.1f, anim.GetLayerIndex("Base Layer"));
+            anim.SetTrigger("IsCriAtckUp");
             kickImpactTime = 2.25f;
             totalAnimDuration = 4.35f;
         }
         else
         {
-            anim.CrossFadeInFixedTime("CriticalAttackUnder", 0.1f, anim.GetLayerIndex("Base Layer"));
+            anim.SetTrigger("IsCriAtckUnder");
             kickImpactTime = 2.45f;
             totalAnimDuration = 6.17f;
         }
@@ -527,8 +525,6 @@ public class TPSFixedMovement : MonoBehaviour
         // 현재 진행 중인 공격 코루틴 등을 강제 중단
         StopAllCoroutines();
 
-        // Any State에서 꼬이지 않도록 모든 애니메이션 파라미터 초기화
-        ResetAllActionBools();
         isCriticalAttacking = false;
 
         // 역경직(패링 당함) 루틴 시작
@@ -548,7 +544,7 @@ public class TPSFixedMovement : MonoBehaviour
         anim.speed = 1f;
 
         // 1. 패링 당하는 애니메이션 시작
-        anim.SetBool("IsParried", true);
+        anim.SetTrigger("IsParried");
 
         // 2. 애니메이션이 최고점에 도달할 중간 포즈까지 도달할 짧은 시간 대기
         yield return new WaitForSeconds(0.3f);
@@ -559,9 +555,6 @@ public class TPSFixedMovement : MonoBehaviour
 
         // 4. 애니메이션 재생 속도 정상 복구
         anim.speed = 1f;
-
-        // 5. 파라미터 초기화
-        anim.SetBool("IsParried", false);
 
         // 6. 남은 분량만큼 대기
         yield return new WaitForSeconds(0.7625f);
@@ -584,11 +577,9 @@ public class TPSFixedMovement : MonoBehaviour
         isHitState = true;
         isInteracting = false;
         isGuarding = false;
-        ResetAllActionBools();
 
         // 1. 애니메이션 실행
-        anim.CrossFadeInFixedTime("CriticalAttackedUpper", 0.1f, anim.GetLayerIndex("Base Layer"));
-        anim.CrossFadeInFixedTime("CriticalAttackedUpper", 0.1f, anim.GetLayerIndex("Action Layer"));
+        anim.SetTrigger("IsCriAtckedUp");
 
         // 2. 물리적으로 날려보낼 방향과 힘 설정 (예: 뒤로 10의 힘으로)
         // 앞으로 날아가고 싶다면 transform.forward를 사용하세요.
@@ -627,11 +618,9 @@ public class TPSFixedMovement : MonoBehaviour
     {
         isInteracting = false;
         isGuarding = false;
-        ResetAllActionBools();
 
         // 1. 애니메이션 실행
-        anim.CrossFadeInFixedTime("CriticalAttackedUnder", 0.1f, anim.GetLayerIndex("Base Layer"));
-        anim.CrossFadeInFixedTime("CriticalAttackedUnder", 0.1f, anim.GetLayerIndex("Action Layer"));
+        anim.SetTrigger("IsCriAtckedUnder");
 
         // 2. 물리적으로 날려보낼 방향과 힘 설정 (예: 뒤로 10의 힘으로)
         // 앞으로 날아가고 싶다면 transform.forward를 사용하세요.
@@ -737,7 +726,6 @@ public class TPSFixedMovement : MonoBehaviour
         StopAndClear(ref hitCoroutine);
         StopAndClear(ref criticalAttackCoroutine);
 
-        ResetAllActionBools();
         isCriticalAttacking = false;
 
         // 맞았으니까 이전 행동의 잠금은 풀고 피격 상태로 넘어가야 합니다.
@@ -755,7 +743,7 @@ public class TPSFixedMovement : MonoBehaviour
     private void Die()
     {
         isDead = true;
-        anim.SetBool("IsDead", true); // Any State에서 사망 모션 실행
+        anim.SetTrigger("IsDead");
 
         // [SOUND] 사망/패배 소리 재생
         SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.defeatSounds, 1.0f);
@@ -796,7 +784,7 @@ public class TPSFixedMovement : MonoBehaviour
         return false;
     }
 
-    private IEnumerator PlayerHitRoutine(string boolName, float duration)
+    private IEnumerator PlayerHitRoutine(string triggerName, float duration)
     {
         float originalActionWeight = anim.GetLayerWeight(actionLayerIndex);
         anim.SetLayerWeight(actionLayerIndex, 0f);
@@ -805,10 +793,9 @@ public class TPSFixedMovement : MonoBehaviour
         isInteracting = false;
         isGuarding = false;
 
-        anim.SetBool(boolName, true);
+        anim.SetTrigger(triggerName);
         yield return new WaitForSeconds(duration);
 
-        anim.SetBool(boolName, false);
         isHitState = false;
         isInteracting = true;
         anim.SetLayerWeight(actionLayerIndex, originalActionWeight);

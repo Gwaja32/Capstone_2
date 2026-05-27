@@ -437,6 +437,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a72b16d82fd9b164ba6b80d21438435c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::SelectManager
+  sceneStartSound: {fileID: 0}
   vsMatchPanel: {fileID: 117800724}
   illustrationDisplayTime: 5
   stageText: {fileID: 2146349169}
@@ -2732,6 +2733,10 @@ PrefabInstance:
       propertyPath: controller
       value: 
       objectReference: {fileID: 435110470}
+    - target: {fileID: 7401825344154255266, guid: 9884b39b45ff3644ba478ff3302095a5, type: 3}
+      propertyPath: m_Controller
+      value: 
+      objectReference: {fileID: 9100000, guid: be2db15db505a1340bb5d1d2f8d5103c, type: 2}
     - target: {fileID: 8381923152701202249, guid: 9884b39b45ff3644ba478ff3302095a5, type: 3}
       propertyPath: m_Name
       value: EnemyController
