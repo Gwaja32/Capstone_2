@@ -4,7 +4,6 @@ using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.InputSystem;
-using UnityEditor.SceneManagement;
 
 public class BattleManager : MonoBehaviour
 {

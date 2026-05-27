@@ -44,6 +44,10 @@ public class SettingsManager : MonoBehaviour
         // 게임 켜지자마자 인스턴스를 한 번 호출해서 하이어라키에 생성되도록 만듦
         var trigger = Instance;
     }
+    void Start()
+    {
+        Screen.SetResolution(1920, 1080, FullScreenMode.ExclusiveFullScreen);
+    }
 
     private void Awake()
     {
