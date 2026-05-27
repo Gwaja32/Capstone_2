@@ -7466,9 +7466,11 @@ MonoBehaviour:
   enemyLayer:
     serializedVersion: 2
     m_Bits: 128
+  criticalAttackDamage: 33
   criticalAttackedDuration: 0.3
   isHitState: 0
   isGuarding: 0
+  isParried: 0
   controller: {fileID: 261871288}
   anim: {fileID: 261871290}
   isInteracting: 1
@@ -12059,9 +12061,11 @@ MonoBehaviour:
   enemyLayer:
     serializedVersion: 2
     m_Bits: 128
+  criticalAttackDamage: 33
   criticalAttackedDuration: 0.3
   isHitState: 0
   isGuarding: 0
+  isParried: 0
   controller: {fileID: 782756184}
   anim: {fileID: 782756186}
   isInteracting: 1
@@ -12078,7 +12082,7 @@ Animator:
   m_Controller: {fileID: 9100000, guid: 24bf9456203485f47a8dc5dc061a3829, type: 2}
   m_CullingMode: 0
   m_UpdateMode: 1
-  m_ApplyRootMotion: 0
+  m_ApplyRootMotion: 1
   m_LinearVelocityBlending: 0
   m_StabilizeFeet: 0
   m_AnimatePhysics: 0
@@ -12821,7 +12825,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: 22b9dbfd8e08c844e8417663215a4867, type: 3}
       propertyPath: m_ApplyRootMotion
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6240733294840144465, guid: 22b9dbfd8e08c844e8417663215a4867, type: 3}
       propertyPath: m_Layer
@@ -39287,7 +39291,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5866666021909216657, guid: 7f155d1f59fd47245afd42dadc58d552, type: 3}
       propertyPath: m_ApplyRootMotion
-      value: 0
+      value: 1
       objectReference: {fileID: 0}
     - target: {fileID: 6240733294840144465, guid: 7f155d1f59fd47245afd42dadc58d552, type: 3}
       propertyPath: m_Layer
@@ -39427,9 +39431,11 @@ MonoBehaviour:
   enemyLayer:
     serializedVersion: 2
     m_Bits: 128
+  criticalAttackDamage: 33
   criticalAttackedDuration: 0.3
   isHitState: 0
   isGuarding: 0
+  isParried: 0
   controller: {fileID: 2077342733}
   anim: {fileID: 2077342730}
   isInteracting: 1
