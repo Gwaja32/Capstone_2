@@ -79,3 +79,4 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 4f1149b2c2bc30440b6a916815bc325e, type: 3}
   - {fileID: 8300000, guid: e161c7cdb1d8330478f6abf3ed381363, type: 3}
   - {fileID: 8300000, guid: bf53dfad6e8e4f840afe1255e08e229c, type: 3}
+  clearSound: {fileID: 8300000, guid: 2177cec717cde4e41b321444ffdb20c3, type: 3}

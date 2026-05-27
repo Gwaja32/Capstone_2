@@ -25,6 +25,7 @@ public class SoundManager : MonoBehaviour
     public AudioClip[] footstepSounds; // 6개 (발걸음)
     public AudioClip victorySound;     // 1개 (승리)
     public AudioClip[] defeatSounds;   // 3개 (패배)
+    public AudioClip clearSound;     // 1개 (클리어)
 
     // 볼륨 설정을 저장할 내부 배율 변수들 (50 기준 비례 연산 결과 대입)
     private float bgmVolumeMultiplier = 1.0f;

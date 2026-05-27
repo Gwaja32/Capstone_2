@@ -4,6 +4,7 @@ using UnityEngine.UI;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.InputSystem;
+using UnityEditor.SceneManagement;
 
 public class BattleManager : MonoBehaviour
 {
@@ -32,6 +33,7 @@ public class BattleManager : MonoBehaviour
 
     [Header("UI References (Auto Cached)")]
     private GameObject gameOverUIPanel;
+    private GameObject gameClearUIPanel;
     private Image enemyHPBarImage;
     private Image enemyStaminaBarImage;
 
@@ -181,6 +183,13 @@ public class BattleManager : MonoBehaviour
                 gameOverUIPanel.SetActive(false);
             }
 
+            Transform gameClearGroupTF = mainCanvas.transform.Find("GameClearGroup");
+            if (gameClearGroupTF != null)
+            {
+                gameClearUIPanel = gameClearGroupTF.gameObject;
+                gameClearUIPanel.SetActive(false);
+            }
+
             Transform enemyBarTF = mainCanvas.transform.Find("StatusUIGroup/Enemy_Bar");
             if (enemyBarTF != null)
             {
@@ -293,6 +302,12 @@ public class BattleManager : MonoBehaviour
         PlayerController playerCtrl = FindFirstObjectByType<PlayerController>();
         if (playerCtrl != null) playerCtrl.SetLockOnTarget(null);
 
+        if (isFinalStage || currentStage == 3)
+        {
+            OnGameClear();
+            return;
+        }
+
         currentStage++;
         StartCoroutine(BackToSelectSceneRoutine());
     }
@@ -312,6 +327,14 @@ public class BattleManager : MonoBehaviour
         if (playerCtrl != null) playerCtrl.SetLockOnTarget(null);
 
         if (gameOverUIPanel != null) gameOverUIPanel.SetActive(true);
+
+        StartCoroutine(WaitForKeyPressAndGoToLobby());
+    }
+
+    private void OnGameClear()
+    {
+        if (gameClearUIPanel != null) gameClearUIPanel.SetActive(true);
+        SoundManager.Instance.PlaySingleSFX(SoundManager.Instance.clearSound, 1f);
 
         StartCoroutine(WaitForKeyPressAndGoToLobby());
     }
@@ -341,6 +364,7 @@ public class BattleManager : MonoBehaviour
 
         // 4. 로비 또는 캐릭터 선택창 씬으로 이동 (씬 이름은 프로젝트에 맞게 수정)
         SceneManager.LoadScene("Lobby");
+        currentStage = 1;
     }
 }
 
