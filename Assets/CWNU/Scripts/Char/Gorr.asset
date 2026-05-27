@@ -12,13 +12,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7005ae4b1d4d3374381d3cdfd3dd867b, type: 3}
   m_Name: Gorr
   m_EditorClassIdentifier: Assembly-CSharp::CharacterData
-  characterName: 
+  characterName: Gorr
   maxHealth: 100
-  maxStamina: 100
-  staminaRegenRate: 20
   moveSpeed: 1
-  attackRange: 1
+  maxStamina: 100
+  staminaRegenRate: 7.5
+  guardStaminaCost: 35
+  attackStaminaCost: 25
+  parryStaminaCost: 25
+  criticalAttackStaminaCost: 20
+  attackRange: 1.4
   attackDuration: 2
-  parryDuration: 1
+  parryDuration: 2
   topHitClip: {fileID: 1827226128182048838, guid: 8c519bb408cffcf4288f1abfa5c5d7eb, type: 3}
   sideHitClip: {fileID: 1827226128182048838, guid: 0af143ad8d6af3e46a8ad85f3aad6c47, type: 3}

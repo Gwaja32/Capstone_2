@@ -5,9 +5,10 @@ using System.Collections.Generic;
 public class EnemyAI : MonoBehaviour
 {
     public enum AIState { Idle, Chase, Attack, Hit, Dead }
+    public enum MovementState { Idle, StrafeLeft, StrafeRight }
 
     [Header("Character Profile")]
-    public CharacterData characterData; // 플레이어와 동일한 데이터 에셋 연결
+    public CharacterData characterData;
 
     [HideInInspector] public float maxHealth;
     [HideInInspector] public float currentHealth;
@@ -35,12 +36,24 @@ public class EnemyAI : MonoBehaviour
     [Header("Movement Settings")]
     public float gravity = -9.81f;
 
+    [Header("Strafing Settings")]
+    public float optimalRange = 2.5f;
+    private MovementState currentMoveState = MovementState.Idle;
+    private float lastMoveStateChangeTime;
+    private float moveStateChangeInterval = 2f;
+
+    [Header("Psychological Combat Settings")]
+    public float stanceHoldDuration = 0.5f;
+
     [Header("Combat Settings")]
     public float attackCooldown = 2.5f;
+    public float criticalAttackDamage = 33.0f;
     private float lastAttackTime;
     public bool isGuarding = false;
     public bool isParried = false;
     public bool isAttacking = false;
+    public bool isCriticalAttacking = false;
+    public bool canExecuteCritical = false;
 
     [Header("Layer Settings")]
     public string actionLayerName = "Action Layer";
@@ -48,23 +61,17 @@ public class EnemyAI : MonoBehaviour
     public float weightLerpSpeed = 20f;
 
     [Header("References")]
-    public CharacterController controller; // 최상위 부모의 컨트롤러를 담을 변수
+    public CharacterController controller;
     [HideInInspector] public Animator anim;
-    [HideInInspector] public Transform targetEnemyTransform; // Target_Enemy 자동 참조용
+    [HideInInspector] public Transform targetEnemyTransform;
 
     private Dictionary<string, float> hitDurationDict = new Dictionary<string, float>();
     private Vector3 velocity;
     private bool isDead = false;
     private bool isInteracting = false;
 
-    //안쓰는거 같아서 임시 주석 처리 (안쓸거 같으면 지우죠)
-    //[Header("Combat Stance Telegraphing")]
-    //private CombatStance nextStance; // 선출된 다음 공격 방향
-    //private bool isPreviewing = false; // 전조 Idle 대기 중인지 체크하는 플래그
-
     void Awake()
     {
-        // 최상위 부모나 본인에게서 CharacterController를 확실하게 가져옵니다.
         if (controller == null)
         {
             controller = GetComponent<CharacterController>();
@@ -82,7 +89,6 @@ public class EnemyAI : MonoBehaviour
 
     void Start()
     {
-        // 스탯 데이터 적용
         if (characterData != null)
         {
             moveSpeed = characterData.moveSpeed;
@@ -94,13 +100,27 @@ public class EnemyAI : MonoBehaviour
             attackRange = characterData.attackRange;
             attackDuration = characterData.attackDuration;
 
-            // 기존 고정값 보존용 
             guardStaminaCost = 20f;
             minStaminaToGuard = 10f;
             rotationSpeed = 100f;
 
             if (characterData.topHitClip != null) hitDurationDict["TopHit"] = characterData.topHitClip.length;
             if (characterData.sideHitClip != null) hitDurationDict["SideHit"] = characterData.sideHitClip.length;
+        }
+
+        if (BattleManager.Instance != null)
+        {
+            int stage = BattleManager.Instance.currentStage;
+            float difficultyMultiplier = 1f + ((stage - 1) * 0.15f);
+
+            maxHealth *= difficultyMultiplier;
+            moveSpeed *= (1f + ((stage - 1) * 0.05f));
+            staminaRegenRate *= difficultyMultiplier;
+
+            attackCooldown = Mathf.Max(1.0f, attackCooldown - ((stage - 1) * 0.3f));
+            stanceHoldDuration = Mathf.Max(0.3f, stanceHoldDuration - ((stage - 1) * 0.05f));
+
+            Debug.Log($"⚔️ [{stage}스테이지 난이도 보정] 체력:{maxHealth:F0} / 공격쿨타임:{attackCooldown:F1}초 / 자세유지:{stanceHoldDuration:F2}초 / 패링 확률 : {100 * (((stage - 1) * 0.05f) + 0.10)}%");
         }
 
         currentHealth = maxHealth;
@@ -110,7 +130,6 @@ public class EnemyAI : MonoBehaviour
             actionLayerIndex = anim.GetLayerIndex(actionLayerName);
     }
 
-    // [SOUND] 애니메이션 이벤트 수신기: 발걸음 소리
     public void PlayFootstep()
     {
         if (currentState == AIState.Chase && SoundManager.Instance != null)
@@ -118,46 +137,38 @@ public class EnemyAI : MonoBehaviour
             SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.footstepSounds, 0.2f);
         }
     }
+
     void Update()
     {
-        if (isDead || anim == null) return;
+        if (isDead || anim == null || isCriticalAttacking) return;
 
-        // 1. 중력 및 스태미나 (항상 실행)
         if (controller != null && controller.enabled && controller.gameObject.activeInHierarchy)
         {
             ApplyGravity();
         }
         HandleStaminaRegen();
 
-        // 2. 플레이어 타겟 확보 (실시간 탐색으로 교정 🔴)
-        // 매 프레임 활성화된 플레이어의 최신 조준점을 실시간으로 새로 탐색하여 추적합니다.
-        GameObject pObj = GameObject.FindWithTag("Player");
-        if (pObj != null)
+        if (playerTransform == null)
         {
-            Transform pTarget = pObj.transform.FindDeepChild("Camera_Target");
-            // Camera_Target이 찾아졌다면 그걸 쓰고, 없거나 비활성화 상태면 플레이어 본체를 꼽습니다.
-            playerTransform = (pTarget != null && pTarget.gameObject.activeInHierarchy) ? pTarget : pObj.transform;
-        }
-        else
-        {
-            playerTransform = null;
+            GameObject pObj = GameObject.FindWithTag("Player");
+            if (pObj != null)
+            {
+                Transform pTarget = pObj.transform.FindDeepChild("Camera_Target");
+                playerTransform = (pTarget != null && pTarget.gameObject.activeInHierarchy) ? pTarget : pObj.transform;
+            }
         }
 
-        // 플레이어 조준점이 없으면 리턴
         if (playerTransform == null) return;
 
-        // 🔴 피격이나 공격 상태일 때 예외 처리 순서
         if (currentState == AIState.Hit || isInteracting)
         {
-            UpdateLayerWeights(); // 1. 피격/공격 애니메이션 출력을 위한 가중치 연산 정상화
+            UpdateLayerWeights();
             if (currentState == AIState.Hit || isAttacking) isGuarding = false;
 
-            HandleRotation(playerTransform.position); // 2. 모션 실행 중에도 플레이어는 무조건 바라봄
-
-            return; // 3. 모션 중에 이동(MoveTowardsPlayer)이 겹치지 않도록 여기서 차단
+            HandleRotation(playerTransform.position);
+            return;
         }
 
-        // 3. 평상시 AI 거리 계산 및 추적 시작
         float distance = Vector3.Distance(transform.position, playerTransform.position);
 
         switch (currentState)
@@ -165,6 +176,7 @@ public class EnemyAI : MonoBehaviour
             case AIState.Idle:
                 if (distance <= chaseRange) currentState = AIState.Chase;
                 break;
+
             case AIState.Chase:
                 HandleRotation(playerTransform.position);
                 if (distance < 3f && currentStamina > minStaminaToGuard && Random.value < 0.01f) isGuarding = true;
@@ -173,77 +185,148 @@ public class EnemyAI : MonoBehaviour
                 else if (distance > chaseRange) currentState = AIState.Idle;
                 else MoveTowardsPlayer();
                 break;
+
             case AIState.Attack:
                 HandleRotation(playerTransform.position);
-                if (distance > attackRange) currentState = AIState.Chase;
-                else HandleAttackPattern();
+                if (distance > attackRange + 0.5f && !isInteracting)
+                {
+                    currentState = AIState.Chase;
+                }
+                else
+                {
+                    if (!isInteracting)
+                    {
+                        MoveTowardsPlayer();
+                        HandleAttackPattern();
+                    }
+                }
                 break;
         }
+
         UpdateAnimationParams();
         UpdateLayerWeights();
     }
 
-    private void HandleStaminaRegen() { 
-        if (!isGuarding && currentState != AIState.Hit && currentStamina < maxStamina) currentStamina += staminaRegenRate * Time.deltaTime; 
+    private void HandleStaminaRegen()
+    {
+        if (!isGuarding && currentState != AIState.Hit && currentStamina < maxStamina) currentStamina += staminaRegenRate * Time.deltaTime;
     }
 
     private void MoveTowardsPlayer()
     {
-        if (controller == null || playerTransform == null) return;
+        if (controller == null || playerTransform == null || !controller.enabled || !controller.gameObject.activeInHierarchy) return;
 
-        // 🔴 핵심 교정: 적의 '몸이 바라보는 정면'을 기준으로 앞으로 전진하게 만드는 게 아니라,
-        // 플레이어가 있는 월드 좌표상의 실제 방향(dir)을 계산해서 물리 컨트롤러를 밀어줍니다.
-        Vector3 dir = (playerTransform.position - controller.transform.position).normalized;
-        dir.y = 0;
+        Vector3 directionToPlayer = (playerTransform.position - controller.transform.position);
+        directionToPlayer.y = 0;
+        float distance = directionToPlayer.magnitude;
+        Vector3 forwardDir = directionToPlayer.normalized;
 
-        controller.Move(dir * moveSpeed * Time.deltaTime);
+        float closeCombatRange = attackRange + 0.5f;
+
+        if (distance > closeCombatRange)
+        {
+            currentMoveState = MovementState.Idle;
+            controller.Move(forwardDir * moveSpeed * Time.deltaTime);
+            return;
+        }
+
+        if (Time.time >= lastMoveStateChangeTime + moveStateChangeInterval)
+        {
+            float rand = Random.value;
+            if (rand < 0.40f) currentMoveState = MovementState.Idle;
+            else if (rand < 0.70f) currentMoveState = MovementState.StrafeLeft;
+            else currentMoveState = MovementState.StrafeRight;
+
+            moveStateChangeInterval = Random.Range(1.0f, 2.0f);
+            lastMoveStateChangeTime = Time.time;
+        }
+
+        Vector3 finalMoveDirection = Vector3.zero;
+        Vector3 rightDir = Vector3.Cross(Vector3.up, forwardDir).normalized;
+
+        float approachWeight = 0.1f;
+        if (distance < attackRange - 0.2f) approachWeight = -0.4f;
+
+        switch (currentMoveState)
+        {
+            case MovementState.Idle:
+                finalMoveDirection = forwardDir * approachWeight;
+                break;
+            case MovementState.StrafeLeft:
+                finalMoveDirection = (forwardDir * approachWeight) + (rightDir * -1f);
+                break;
+            case MovementState.StrafeRight:
+                finalMoveDirection = (forwardDir * approachWeight) + (rightDir * 1f);
+                break;
+        }
+
+        finalMoveDirection.Normalize();
+
+        if (finalMoveDirection != Vector3.zero)
+        {
+            float currentSpeed = (currentMoveState == MovementState.Idle) ? moveSpeed : moveSpeed * 0.7f;
+            controller.Move(finalMoveDirection * currentSpeed * Time.deltaTime);
+        }
     }
 
     private void HandleRotation(Vector3 targetPos)
     {
-        // 🔴 핵심 교정: transform.parent 대신, Awake에서 안전하게 찾아둔 
-        // 물리와 이동을 담당하는 최상위 변수인 'controller'의 transform을 직접 돌려버립니다.
-        if (controller == null) return;
+        if (controller == null || !controller.enabled) return;
 
         Transform rootBody = controller.transform;
-
-        // 적과 플레이어 사이의 방향 계산
         Vector3 dir = targetPos - rootBody.position;
-        dir.y = 0; // 엎드러지거나 하늘을 보지 않도록 Y축 회전 고정
+        dir.y = 0;
 
         if (dir != Vector3.zero)
         {
-            // Slerp를 이용해 최상위 몸통(Controller를 가진 오브젝트)을 플레이어 쪽으로 부드럽고 빠르게 회전시킵니다.
-            // rotationSpeed가 40f로 되어있는데, 격투 게임 특성상 시선이 휙휙 돌아가야 하므로 대폭 올리거나 즉시 회전하는 것이 좋습니다.
             rootBody.rotation = Quaternion.Slerp(rootBody.rotation, Quaternion.LookRotation(dir), Time.deltaTime * rotationSpeed);
         }
     }
 
-    private void HandleAttackPattern() { 
-        if (Time.time >= lastAttackTime + attackCooldown) ExecuteAttack(); 
-    }
-
-    private void ExecuteAttack() { 
-        if (isInteracting || currentStamina < 20f) return; 
-        StartCoroutine(AttackRoutine()); 
-        lastAttackTime = Time.time; 
+    private void HandleAttackPattern()
+    {
+        if (!isInteracting && Time.time >= lastAttackTime + attackCooldown)
+        {
+            ExecuteAttack();
+        }
     }
 
     private IEnumerator AttackRoutine()
     {
-        isInteracting = true; isGuarding = false; isAttacking = true;
+        currentStance = (CombatStance)Random.Range(0, 3);
+        UpdateAnimationParams();
+
+        float elapsed = 0f;
+        while (elapsed < stanceHoldDuration)
+        {
+            elapsed += Time.deltaTime;
+            HandleRotation(playerTransform.position);
+
+            Vector3 dirToPlayer = (playerTransform.position - transform.position);
+            dirToPlayer.y = 0;
+            float currentDistance = dirToPlayer.magnitude;
+
+            if (currentDistance > attackRange && controller != null && controller.enabled)
+            {
+                anim.SetFloat("InputY", 1.0f);
+                anim.SetFloat("InputX", 0f);
+                controller.Move(dirToPlayer.normalized * moveSpeed * Time.deltaTime);
+            }
+
+            UpdateAnimationParams();
+            yield return null;
+        }
+
+        isInteracting = true; isGuarding = false; isAttacking = true; 
         currentStance = (CombatStance)Random.Range(0, 3);
         currentStamina -= 15f;
-        ResetAllActionBools();
 
         if (SoundManager.Instance != null)
-            SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.5f);
+            SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.attackSounds, 0.6f);
 
-        string bName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
-        anim.SetBool(bName, true);
+        string triggerName = currentStance == CombatStance.Top ? "IsTopAttack" : currentStance == CombatStance.Left ? "IsLeftAttack" : "IsRightAttack";
+        anim.SetTrigger(triggerName);
 
-        // 타격 판정이 발생하기 전까지 기다립니다.
-        // 이 0.4초 동안 적은 isAttacking = true 상태이므로 패링이 가능해집니다!
         float windUpTime = 0.4f;
         yield return new WaitForSeconds(windUpTime);
 
@@ -251,8 +334,135 @@ public class EnemyAI : MonoBehaviour
 
         yield return new WaitForSeconds(attackDuration - windUpTime);
 
-        anim.SetBool(bName, false);
         isInteracting = false; isAttacking = false;
+    }
+
+    private void ExecuteAttack()
+    {
+        if (isInteracting || currentStamina < 20f) return;
+
+        lastAttackTime = Time.time;
+        StartCoroutine(AttackRoutine());
+    }
+
+    private IEnumerator CriticalAttackRoutine(TPSFixedMovement targetPlayer)
+    {
+        // 1. AI 측 상시 차단 플래그 즉시 확정
+        isCriticalAttacking = true;
+        currentState = AIState.Attack;
+        isInteracting = true;
+        isAttacking = true;
+        isGuarding = false;
+
+        targetPlayer.isHitState = false;
+
+        bool isUpperAttack = targetPlayer.getCurrentHealth() > criticalAttackDamage;
+
+        // [개선] CharacterController를 확실하게 끄고 물리 속도 초기화
+        if (controller != null)
+        {
+            controller.enabled = false;
+        }
+        velocity = Vector3.zero;
+
+        float elapsed = 0f;
+        float alignDuration = 0.2f;
+
+        Vector3 startPos = transform.position;
+        Quaternion startRot = transform.rotation;
+
+        // 0.2초 정렬 이동 (보정된 실시간 위치 추적 방식)
+        while (elapsed < alignDuration)
+        {
+            if (targetPlayer == null) break;
+
+            // 매 프레임 플레이어의 위치를 기반으로 방향을 다시 계산하여 정확도 극대화
+            Vector3 toPlayerDir = (targetPlayer.transform.position - transform.position).normalized;
+            toPlayerDir.y = 0;
+
+            // 🟢 [수정] 올바른 우측 벡터 연산 (앞 -> 위 = 오른쪽)
+            Vector3 myRightDir = Vector3.Cross(toPlayerDir, Vector3.up).normalized;
+
+            float forwardOffset = 0.3f;
+            // 필요에 따라 오프셋 조정 (오른손잡이 무기 궤적 맞춤용)
+            float myRightOffset = isUpperAttack ? 0f : 0.1f;
+
+            // 목표 위치 실시간 갱신
+            Vector3 currentTargetPos = targetPlayer.transform.position
+                                      - (toPlayerDir * forwardOffset)
+                                      + (myRightDir * myRightOffset);
+            currentTargetPos.y = transform.position.y; // 땅 높이 유지
+
+            Quaternion currentTargetRot = Quaternion.LookRotation(toPlayerDir);
+
+            // 부드럽게 보간 이동 및 회전
+            transform.position = Vector3.Lerp(startPos, currentTargetPos, elapsed / alignDuration);
+            transform.rotation = Quaternion.Slerp(startRot, currentTargetRot, elapsed / alignDuration);
+
+            elapsed += Time.deltaTime;
+            yield return null;
+        }
+
+        // 최종 위치 고정 및 완벽히 타겟 바라보기
+        if (targetPlayer != null)
+        {
+            Vector3 finalDir = (targetPlayer.transform.position - transform.position).normalized;
+            finalDir.y = 0;
+            if (finalDir != Vector3.zero) transform.rotation = Quaternion.LookRotation(finalDir);
+        }
+
+        float originalActionWeight = anim.GetLayerWeight(actionLayerIndex);
+        anim.SetLayerWeight(actionLayerIndex, 0f);
+
+        float kickImpactTime;
+        float totalAnimDuration;
+
+        if (isUpperAttack)
+        {
+            anim.SetTrigger("IsCriAtckUp");
+            kickImpactTime = 2.25f;
+            totalAnimDuration = 4.35f;
+        }
+        else
+        {
+            anim.SetTrigger("IsCriAtckUnder");
+            kickImpactTime = 2.45f;
+            totalAnimDuration = 6.17f;
+        }
+
+        targetPlayer.GetParried(kickImpactTime);
+        yield return new WaitForSeconds(kickImpactTime);
+
+        if (targetPlayer != null)
+        {
+            targetPlayer.GetCriticalAttacked(criticalAttackDamage, this);
+        }
+
+        anim.SetLayerWeight(actionLayerIndex, originalActionWeight);
+
+        // [개선] 애니메이션 처리가 끝난 후 안전하게 컨트롤러 재활성화
+        if (controller != null) controller.enabled = true;
+
+        yield return new WaitForSeconds(totalAnimDuration - kickImpactTime);
+
+        if (targetPlayer != null) targetPlayer.isHitState = false;
+        canExecuteCritical = false;
+
+        isInteracting = false;
+        isAttacking = false;
+        isCriticalAttacking = false;
+        currentState = AIState.Chase;
+    }
+
+    private string GetAttackTriggerName(CombatStance stance)
+    {
+        switch (stance)
+        {
+            case CombatStance.Top: return "IsTopAttack";
+            case CombatStance.Left: return "IsLeftAttack";
+            case CombatStance.Right: return "IsRightAttack";
+            default: return "IsTopAttack";
+        }
     }
 
     private void CheckCombatHit()
@@ -268,20 +478,40 @@ public class EnemyAI : MonoBehaviour
 
     public void TakeDamage(CombatStance attackerStance, TPSFixedMovement attacker)
     {
-        if (isDead || currentState == AIState.Hit) return;
+        if (isDead || isCriticalAttacking || currentState == AIState.Dead) return;
+
+        int stage = BattleManager.Instance != null ? BattleManager.Instance.currentStage : 1;
+        float parryChance = ((stage - 1) * 0.05f) + 0.10f;
+
+        if (Random.value < parryChance && attacker != null)
+        {
+            if (SoundManager.Instance != null)
+                SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.parrySounds, 1.0f);
+
+            attacker.GetParried();
+            lastAttackTime = 0f;
+
+            canExecuteCritical = true;
+            currentState = AIState.Attack;
+
+            isInteracting = true;
+            isAttacking = false;
+            isGuarding = false;
+
+            // 🟢 [수정] 즉시 처형하는 대신, 시간차를 두는 안전한 코루틴으로 위임합니다.
+            StopAllCoroutines();
+            StartCoroutine(DelayedCriticalFromParryRoutine(attacker));
+            return;
+        }
 
         if (isGuarding && CanBlock(attackerStance))
         {
+            currentStamina -= guardStaminaCost;
+
             if (SoundManager.Instance != null)
                 SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.clashSounds, 0.7f);
 
-            currentStamina -= guardStaminaCost;
-
-            if (attacker != null)
-            {
-                attacker.StartCoroutine("RecoilRoutine", 1.0f);
-            }
-
+            if (attacker != null) attacker.StartCoroutine("RecoilRoutine", 1.0f);
             if (currentStamina <= 0) { currentStamina = 0; isGuarding = false; }
             return;
         }
@@ -293,7 +523,6 @@ public class EnemyAI : MonoBehaviour
         if (currentHealth <= 0) { Die(); return; }
 
         StopAllCoroutines();
-        ResetAllActionBools();
         isInteracting = false;
 
         string hitBool = (attackerStance == CombatStance.Top) ? "IsTopHit" : (attackerStance == CombatStance.Left) ? "IsRightHit" : "IsLeftHit";
@@ -302,13 +531,83 @@ public class EnemyAI : MonoBehaviour
         StartCoroutine(HitRoutine(hitBool, duration));
     }
 
+    private IEnumerator DelayedCriticalFromParryRoutine(TPSFixedMovement targetPlayer)
+    {
+        anim.SetTrigger("IsParry");
+
+        yield return new WaitForSeconds(0.8f);
+
+        if (targetPlayer != null && !isDead)
+        {
+            // 대기가 끝났으니 잠금을 일시 해제하고 정식 처형 함수로 진입시킵니다.
+            isInteracting = false;
+            ExecuteCriticalFromParry(targetPlayer);
+        }
+        else
+        {
+            // 만에 하나 플레이어가 사라졌거나 처리 도중 사망했다면 상태 해제
+            isInteracting = false;
+            currentState = AIState.Chase;
+        }
+    }
+
+    private void ExecuteCriticalFromParry(TPSFixedMovement targetPlayer)
+    {
+        if (targetPlayer == null || isCriticalAttacking) return;
+
+        // 안전하게 모든 문을 걸어잠그고 처형 돌입
+        isCriticalAttacking = true;
+        currentState = AIState.Attack;
+        isInteracting = true;
+        isAttacking = true;
+        canExecuteCritical = false;
+
+
+        StopAllCoroutines();
+        StartCoroutine(CriticalAttackRoutine(targetPlayer));
+    }
+
+    private IEnumerator HitRoutine(string b, float d)
+    {
+        currentState = AIState.Hit;
+        anim.SetBool("IsGuarding", false);
+        anim.SetFloat("InputY", 0);
+        anim.SetTrigger(b);
+
+        float elapsed = 0f;
+        while (elapsed < d)
+        {
+            elapsed += Time.deltaTime;
+            UpdateLayerWeights();
+
+            if (playerTransform != null)
+            {
+                HandleRotation(playerTransform.position);
+            }
+
+            yield return null;
+        }
+
+        if (playerTransform != null && !isDead)
+        {
+            Transform targetRotationRoot = controller != null ? controller.transform : transform;
+            Vector3 dir = playerTransform.position - targetRotationRoot.position;
+            dir.y = 0;
+
+            if (dir != Vector3.zero)
+            {
+                targetRotationRoot.rotation = Quaternion.LookRotation(dir);
+            }
+        }
+
+        if (!isDead) currentState = AIState.Chase;
+    }
+
     public void GetParried(float kickImpactTime = 2.5f)
     {
         if (currentState == AIState.Dead) return;
 
         StopAllCoroutines();
-
-        ResetAllActionBools();
 
         currentState = AIState.Hit;
         isAttacking = false;
@@ -320,9 +619,7 @@ public class EnemyAI : MonoBehaviour
     private IEnumerator GetParriedRoutine(float duration)
     {
         isParried = true;
-
-        anim.SetBool("IsParried", true);
-
+        anim.SetTrigger("IsParried");
         anim.Play("Parried", actionLayerIndex, 0f);
 
         float myParryAnimLength = 1.45f;
@@ -331,9 +628,8 @@ public class EnemyAI : MonoBehaviour
 
         if (isParried)
         {
-            isParried = false; 
+            isParried = false;
             anim.speed = 1f;
-            anim.SetBool("IsParried", false);
             currentState = AIState.Idle;
         }
     }
@@ -344,11 +640,9 @@ public class EnemyAI : MonoBehaviour
 
         anim.speed = 1f;
         StopAllCoroutines();
-        anim.SetBool("IsParried", false);
-
         isInteracting = false;
 
-        if (currentHealth > 50f)
+        if (currentHealth > criticalAttackDamage)
         {
             StartCoroutine(GetCriticalAttackedUpperRoutine(damage));
         }
@@ -364,7 +658,7 @@ public class EnemyAI : MonoBehaviour
         isAttacking = false;
         isParried = false;
 
-        anim.CrossFadeInFixedTime("CriticalAttackedUpper", 0.1f);
+        anim.SetTrigger("IsCriAtckedUp");
 
         Vector3 pushForce = -transform.forward * 2.5f;
         float elapsed = 0f;
@@ -383,12 +677,13 @@ public class EnemyAI : MonoBehaviour
             if (!isDamageApplied && elapsed >= damageTiming)
             {
                 ApplyDamage(damage);
-                isDamageApplied = true; // 중복 실행 방지
+                isDamageApplied = true;
             }
 
             elapsed += Time.deltaTime;
             yield return null;
         }
+
     }
 
     private IEnumerator GetCriticalAttackedUnderRoutine(float damage)
@@ -397,7 +692,7 @@ public class EnemyAI : MonoBehaviour
         isAttacking = false;
         isParried = false;
 
-        anim.CrossFadeInFixedTime("CriticalAttackedUnder", 0.1f);
+        anim.SetTrigger("IsCriAtckedUnder");
 
         Vector3 pushForce = Vector3.zero;
         float elapsed = 0f;
@@ -430,10 +725,7 @@ public class EnemyAI : MonoBehaviour
 
         ApplyDamage(damage);
         isDead = true;
-        StopAllCoroutines();
-        ResetAllActionBools();
         currentState = AIState.Dead;
-        controller.enabled = false;
 
         if (SoundManager.Instance != null)
             SoundManager.Instance.PlaySingleSFX(SoundManager.Instance.victorySound, 1.0f);
@@ -442,6 +734,8 @@ public class EnemyAI : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
 
         if (BattleManager.Instance != null) BattleManager.Instance.OnEnemyDefeated();
+
+        StopAllCoroutines();
     }
 
     private void ApplyDamage(float damage)
@@ -459,87 +753,31 @@ public class EnemyAI : MonoBehaviour
         }
     }
 
-    private bool CanBlock(CombatStance s) { return (s == CombatStance.Top && currentStance == CombatStance.Top) || (s == CombatStance.Left && currentStance == CombatStance.Right) || (s == CombatStance.Right && currentStance == CombatStance.Left); }
-
-    private IEnumerator HitRoutine(string b, float d)
+    private bool CanBlock(CombatStance s)
     {
-        currentState = AIState.Hit;
-
-        anim.SetBool("IsGuarding", false);
-        anim.SetFloat("InputY", 0);
-
-        // 1. 피격 애니메이션 시작
-        anim.SetBool(b, true);
-
-        // 🔴 교정: 맞아서 경직이 들어간 시간(d) 동안 이동은 안 하지만, 플레이어가 좌우로 무빙하면 시선은 실시간으로 따라가도록 보정합니다.
-        float elapsed = 0f;
-        while (elapsed < d)
-        {
-            elapsed += Time.deltaTime;
-            UpdateLayerWeights();
-
-            // 피격 경직 중에도 플레이어의 최신 위치를 실시간 검색하여 바라봅니다.
-            GameObject pObj = GameObject.FindWithTag("Player");
-            if (pObj != null)
-            {
-                Transform pTarget = pObj.transform.FindDeepChild("Camera_Target");
-                Transform currentTarget = (pTarget != null && pTarget.gameObject.activeInHierarchy) ? pTarget : pObj.transform;
-                HandleRotation(currentTarget.position);
-            }
-
-            yield return null;
-        }
-
-        // 2. 피격 애니메이션 종료
-        anim.SetBool(b, false);
-
-        // 🔴 교정: 프레임 지연 없이 즉시 정면 각도를 쳐다보도록 즉시 동기화 처리
-        if (playerTransform != null && !isDead)
-        {
-            Transform targetRotationRoot = transform.parent != null ? transform.parent : transform;
-            Vector3 dir = playerTransform.position - targetRotationRoot.position;
-            dir.y = 0;
-
-            if (dir != Vector3.zero)
-            {
-                targetRotationRoot.rotation = Quaternion.LookRotation(dir);
-            }
-        }
-
-        // 3. 시선 동기화가 완벽히 끝난 상태에서 안전하게 추적/공격 상태로 복귀
-        if (!isDead) currentState = AIState.Chase;
+        return (s == CombatStance.Top && currentStance == CombatStance.Top) ||
+               (s == CombatStance.Left && currentStance == CombatStance.Right) ||
+               (s == CombatStance.Right && currentStance == CombatStance.Left);
     }
 
     private void Die()
     {
         isDead = true;
-        StopAllCoroutines();
-        ResetAllActionBools();
-        anim.SetBool("IsDead", true);
         currentState = AIState.Dead;
-        controller.enabled = false;
+        anim.SetTrigger("IsDead");
+        if (controller != null) controller.enabled = false;
 
         if (SoundManager.Instance != null)
             SoundManager.Instance.PlaySingleSFX(SoundManager.Instance.victorySound, 1.0f);
 
-        // 🔴 [핵심 추가] 일반 사망 시에도 마우스 커서 완전 해제
         Cursor.visible = true;
         Cursor.lockState = CursorLockMode.None;
 
         if (BattleManager.Instance != null) BattleManager.Instance.OnEnemyDefeated();
+
+        StopAllCoroutines();
     }
 
-    private void ResetAllActionBools() { 
-        anim.SetBool("IsTopAttack", false); 
-        anim.SetBool("IsLeftAttack", false); 
-        anim.SetBool("IsRightAttack", false); 
-        anim.SetBool("IsTopHit", false); 
-        anim.SetBool("IsLeftHit", false); 
-        anim.SetBool("IsRightHit", false); 
-        anim.SetBool("IsParried", false); 
-    }
-
-    // 🔴 [수정 완료] 가드 중이거나, 공격·피격을 하지 않는 평상시 상태일 때 가중치를 1로 복구
     private void UpdateLayerWeights()
     {
         if (isDead || anim == null) return;
@@ -556,20 +794,33 @@ public class EnemyAI : MonoBehaviour
     {
         if (controller == null) return;
 
-        // 🔴 수정: 바닥 체크 조건과 무관하게 공중일 때 중력이 누적되도록 분리
         if (controller.isGrounded)
         {
-            if (velocity.y < 0) velocity.y = -2f; // 접지 유지
+            if (velocity.y < 0) velocity.y = -2f;
         }
         else
         {
-            velocity.y += gravity * Time.deltaTime; // 낙하 속도 누적
+            velocity.y += gravity * Time.deltaTime;
         }
 
         controller.Move(velocity * Time.deltaTime);
     }
 
-    private void UpdateAnimationParams() { anim.SetFloat("InputY", (currentState == AIState.Chase) ? 1f : 0f, 0.1f, Time.deltaTime); anim.SetFloat("Stance", (float)currentStance); anim.SetBool("IsGuarding", isGuarding); }
+    private void UpdateAnimationParams()
+    {
+        anim.SetFloat("InputY", (currentState == AIState.Chase) ? 1f : 0f, 0.1f, Time.deltaTime);
+
+        float targetInputX = 0f;
+        if (currentState == AIState.Chase || isInteracting)
+        {
+            if (currentMoveState == MovementState.StrafeLeft) targetInputX = -1f;
+            else if (currentMoveState == MovementState.StrafeRight) targetInputX = 1f;
+        }
+        anim.SetFloat("InputX", targetInputX, 0.1f, Time.deltaTime);
+
+        anim.SetFloat("Stance", (float)currentStance);
+        anim.SetBool("IsGuarding", isGuarding);
+    }
 
     public IEnumerator RecoilRoutine(float duration)
     {
@@ -579,26 +830,10 @@ public class EnemyAI : MonoBehaviour
         if (SoundManager.Instance != null)
             SoundManager.Instance.PlayRandomSFX(SoundManager.Instance.parrySounds, 0.6f);
 
-        ResetAllActionBools();
 
         yield return new WaitForSeconds(duration);
 
         isInteracting = false;
         currentState = AIState.Chase;
-    }
-}
-
-// 자식 계층 구조 깊은 탐색을 위한 확장 메서드 서포트 클래스
-public static class TransformExtensions
-{
-    public static Transform FindDeepChild(this Transform parent, string name)
-    {
-        foreach (Transform child in parent)
-        {
-            if (child.name == name) return child;
-            Transform result = child.FindDeepChild(name);
-            if (result != null) return result;
-        }
-        return null;
     }
 }

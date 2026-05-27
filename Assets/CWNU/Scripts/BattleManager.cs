@@ -32,8 +32,12 @@ public class BattleManager : MonoBehaviour
 
     [Header("UI References (Auto Cached)")]
     private GameObject gameOverUIPanel;
+    private GameObject gameClearUIPanel;
     private Image enemyHPBarImage;
     private Image enemyStaminaBarImage;
+
+    private Image playerPortraitImage;
+    private Image enemyPortraitImage;
 
     private List<string> remainingEnemies;
     private GameObject currentActiveModel;
@@ -181,6 +185,13 @@ public class BattleManager : MonoBehaviour
                 gameOverUIPanel.SetActive(false);
             }
 
+            Transform gameClearGroupTF = mainCanvas.transform.Find("GameClearGroup");
+            if (gameClearGroupTF != null)
+            {
+                gameClearUIPanel = gameClearGroupTF.gameObject;
+                gameClearUIPanel.SetActive(false);
+            }
+
             Transform enemyBarTF = mainCanvas.transform.Find("StatusUIGroup/Enemy_Bar");
             if (enemyBarTF != null)
             {
@@ -190,6 +201,12 @@ public class BattleManager : MonoBehaviour
                 if (hpTF != null) enemyHPBarImage = hpTF.GetComponent<Image>();
                 if (staminaTF != null) enemyStaminaBarImage = staminaTF.GetComponent<Image>();
             }
+
+            Transform playerPortraitTF = mainCanvas.transform.Find("StatusUIGroup/Player_Bar/Portrait");
+            Transform enemyPortraitTF = mainCanvas.transform.Find("StatusUIGroup/Enemy_Bar/Portrait");
+
+            if (playerPortraitTF != null) playerPortraitImage = playerPortraitTF.GetComponent<Image>();
+            if (enemyPortraitTF != null) enemyPortraitImage = enemyPortraitTF.GetComponent<Image>();
         }
 
         if (!isInitialized || remainingEnemies == null)
@@ -216,6 +233,28 @@ public class BattleManager : MonoBehaviour
 
         // 3. 최종적으로 '선택창에서 뽑힌 적'의 모델을 맵에 활성화합니다!
         ActivateEnemyModelByName(enemyCharacterName);
+        ApplyPortraits();
+    }
+
+    /// <summary>
+    /// 🔴 [새로 추가된 함수] 
+    /// Resources 폴더에서 현재 플레이어와 적 이름에 맞는 초상화를 가져와 UI에 적용합니다.
+    /// </summary>
+    private void ApplyPortraits()
+    {
+        // 1. 플레이어 초상화 적용
+        if (playerPortraitImage != null && !string.IsNullOrEmpty(selectedCharacterName))
+        {
+            Sprite playerSprite = Resources.Load<Sprite>($"Portraits/{selectedCharacterName}");
+            if (playerSprite != null) playerPortraitImage.sprite = playerSprite;
+        }
+
+        // 2. 적 초상화 적용
+        if (enemyPortraitImage != null && !string.IsNullOrEmpty(enemyCharacterName))
+        {
+            Sprite enemySprite = Resources.Load<Sprite>($"Portraits/{enemyCharacterName}");
+            if (enemySprite != null) enemyPortraitImage.sprite = enemySprite;
+        }
     }
 
     public void StartNextStage()
@@ -293,6 +332,12 @@ public class BattleManager : MonoBehaviour
         PlayerController playerCtrl = FindFirstObjectByType<PlayerController>();
         if (playerCtrl != null) playerCtrl.SetLockOnTarget(null);
 
+        if (isFinalStage || currentStage == 3)
+        {
+            OnGameClear();
+            return;
+        }
+
         currentStage++;
         StartCoroutine(BackToSelectSceneRoutine());
     }
@@ -312,6 +357,14 @@ public class BattleManager : MonoBehaviour
         if (playerCtrl != null) playerCtrl.SetLockOnTarget(null);
 
         if (gameOverUIPanel != null) gameOverUIPanel.SetActive(true);
+
+        StartCoroutine(WaitForKeyPressAndGoToLobby());
+    }
+
+    private void OnGameClear()
+    {
+        if (gameClearUIPanel != null) gameClearUIPanel.SetActive(true);
+        SoundManager.Instance.PlaySingleSFX(SoundManager.Instance.clearSound, 1f);
 
         StartCoroutine(WaitForKeyPressAndGoToLobby());
     }
@@ -341,6 +394,7 @@ public class BattleManager : MonoBehaviour
 
         // 4. 로비 또는 캐릭터 선택창 씬으로 이동 (씬 이름은 프로젝트에 맞게 수정)
         SceneManager.LoadScene("Lobby");
+        currentStage = 1;
     }
 }
 

@@ -1,4 +1,3 @@
-using Unity.AppUI.Core;
 using Unity.Cinemachine;
 using UnityEngine;
 
@@ -48,7 +47,7 @@ public class PlayerController : MonoBehaviour
                 if (thirdPersonCam != null && cameraHolder != null)
                 {
                     thirdPersonCam.Follow = this.cameraHolder;
-                    thirdPersonCam.LookAt = this.cameraHolder;
+                    thirdPersonCam.LookAt = activeCharacter.transform;
 
                     var tracking = thirdPersonCam.GetComponent<CinemachinePositionComposer>();
                     if (tracking != null)

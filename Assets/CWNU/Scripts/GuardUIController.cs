@@ -1,10 +1,11 @@
 using UnityEngine;
 using UnityEngine.UI;
+using static PlayerController;
 
 public class GuardUIController : MonoBehaviour
 {
     [Header("플레이어 스크립트 연결")]
-    public TPSFixedMovement playerMovement;
+    public TPSFixedMovement activeCharacter;
 
     [Header("UI 이미지 연결")]
     public Image topSwordUI;
@@ -30,16 +31,46 @@ public class GuardUIController : MonoBehaviour
     void Start()
     {
         mainCam = Camera.main;
-
-        if (playerMovement != null)
+        InitializeSelectedCharacter();
+        if (activeCharacter != null)
         {
-            lastStance = playerMovement.currentStance;
+            lastStance = activeCharacter.currentStance;
             UpdateUI(lastStance);
+        }
+    }
+
+    private void InitializeSelectedCharacter()
+    {
+        // 1. 씬에 존재하는 PlayerController를 먼저 찾습니다.
+        PlayerController playerController = FindFirstObjectByType<PlayerController>();
+
+        if (playerController != null)
+        {
+            // 2. 플레이어 컨트롤러가 이미 자동으로 찾아둔 활성화된 캐릭터를 그대로 가져옵니다.
+            if (playerController.activeCharacter != null)
+            {
+                activeCharacter = playerController.activeCharacter;
+                Debug.Log($"✅ [GuardUI] 플레이어의 activeCharacter({activeCharacter.gameObject.name}) 연결 성공!");
+            }
+            else
+            {
+                Debug.LogWarning("⚠ PlayerController는 찾았으나, activeCharacter가 아직 할당되지 않았습니다. (호출 순서 문제일 수 있음)");
+            }
+        }
+        else
+        {
+            Debug.LogWarning("⚠ 씬에서 PlayerController를 찾을 수 없습니다.");
         }
     }
 
     void Update()
     {
+        if (activeCharacter == null)
+        {
+            InitializeSelectedCharacter();
+            if (activeCharacter == null) return; // 그래도 없으면 리턴
+        }
+
         // 1. 캐릭터 따라가기
         if (targetToFollow != null && mainCam != null)
         {
@@ -56,11 +87,11 @@ public class GuardUIController : MonoBehaviour
         transform.localScale = new Vector3(uiScale, uiScale, 1f);
 
         // 3. 가드 방향 업데이트
-        if (playerMovement == null) return;
+        if (activeCharacter == null) return;
 
-        if (playerMovement.currentStance != lastStance)
+        if (activeCharacter.currentStance != lastStance)
         {
-            lastStance = playerMovement.currentStance;
+            lastStance = activeCharacter.currentStance;
             UpdateUI(lastStance);
         }
     }
