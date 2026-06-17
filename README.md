@@ -18,7 +18,7 @@
 | --- | --- |
 | Unity 6 | 게임 엔진 및 통합 개발 환경 |
 | TRELLIS.2 | 로컬 3D 에셋 생성 AI | 
-| Cartwheel & Quick Magic | 모션 캡처 기반 리깅 애니메이션 생성 |
+| Cartwheel & Quick Magic | 모션 캡처 기반 리깅 애니메이션 생성 AI |
 | Blender | 에셋 최적화 및 파이프라인 |
 | Modddif | 디지털 텍스처링 및 머티리얼 보완 (AI 기반) |
 | Mixamo | 범용 애니메이션 플랫폼 활용 |
