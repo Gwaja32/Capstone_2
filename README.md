@@ -2,7 +2,7 @@
 ## The Knight (더 나이트)
 ### Development of psychological warfare-oriented direction-based close combat game
 
-해당 작품은 국립창원대학교 캡스톤디자인(졸업작품)에 제출하기 위해 제작한 게임 작품으로   
+해당 작품은 2026 국립창원대학교 컴퓨터공학과 캡스톤디자인(졸업작품)에 제출하기 위해 제작한 게임 작품으로   
 적 AI와 1대1 진검 승부를 하는 포 아너 식 전투 게임이자   
 심리전 중심의 방향성 기반 근접 전투 게임 입니다.
 
